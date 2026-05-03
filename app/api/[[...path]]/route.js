@@ -1,19 +1,16 @@
-import { MongoClient } from 'mongodb'
-import { v4 as uuidv4 } from 'uuid'
+import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-let client
-let db
+// ── Supabase server-side client ──────────────────────────────────────────────
+// Uses service role key to bypass RLS for all server-side operations.
+// Never expose this key to the frontend.
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  { auth: { persistSession: false } }
+)
 
-async function connectToMongo() {
-  if (!client) {
-    client = new MongoClient(process.env.MONGO_URL)
-    await client.connect()
-    db = client.db(process.env.DB_NAME || 'corrector_examenes')
-  }
-  return db
-}
-
+// ── CORS ─────────────────────────────────────────────────────────────────────
 function handleCORS(response) {
   response.headers.set('Access-Control-Allow-Origin', process.env.CORS_ORIGINS || '*')
   response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
@@ -25,6 +22,26 @@ export async function OPTIONS() {
   return handleCORS(new NextResponse(null, { status: 200 }))
 }
 
+// ── Transform Supabase row → frontend camelCase format ───────────────────────
+function transformResult(row) {
+  const fb = row.feedback || {}
+  return {
+    id:             row.id,
+    studentName:    row.student_name  || '',
+    studentGroup:   row.student_group || '',
+    subject:        row.subject       || '',
+    gradeLevel:     row.level         || '',
+    grade:          parseFloat(row.grade)     || 0,
+    maxGrade:       parseFloat(row.max_grade) || 10,
+    gradeLabel:     fb.gradeLabel  || '',
+    questions:      fb.questions   || [],
+    timeTaken:      fb.timeTaken   || 0,
+    totalQuestions: fb.totalQuestions ?? (fb.questions || []).length,
+    createdAt:      row.created_at,
+  }
+}
+
+// ── Extract JSON from AI response (handles markdown code blocks) ─────────────
 function extractJSON(text) {
   if (!text) return null
   const block = text.match(/```(?:json)?\s*([\s\S]*?)```/)
@@ -35,6 +52,7 @@ function extractJSON(text) {
   return text
 }
 
+// ── AI exam grading ───────────────────────────────────────────────────────────
 async function gradeExamWithAI({ imageBase64, mimeType, subject, gradeLevel, rubric }) {
   const systemPrompt = `Eres un corrector de examenes experto en el sistema educativo espanol.
 Recibiras la imagen de un examen de un estudiante y la rubrica o respuestas correctas.
@@ -98,71 +116,77 @@ IMPORTANTE: Responde UNICAMENTE con JSON valido. Sin texto adicional. Usa este f
 
   try {
     return JSON.parse(jsonStr)
-  } catch (e) {
+  } catch {
     throw new Error(`No se pudo parsear la respuesta de la IA: ${content.slice(0, 200)}`)
   }
 }
 
+// ── GET handler ───────────────────────────────────────────────────────────────
 export async function GET(request) {
   const { pathname, searchParams } = new URL(request.url)
   const path = pathname.replace('/api', '')
 
   try {
-    if (path === '/results' || path === '/results/') {
-      const database = await connectToMongo()
+    // ── GET /api/health ───────────────────────────────────────────────────────
+    if (path === '/health' || path === '/health/') {
+      return handleCORS(NextResponse.json({
+        status: 'ok',
+        service: 'Corrector de Examenes',
+        database: 'Supabase PostgreSQL'
+      }))
+    }
 
-      const subject = searchParams.get('subject')
-      const dateFrom = searchParams.get('dateFrom')
-      const dateTo = searchParams.get('dateTo')
+    // ── GET /api/results ──────────────────────────────────────────────────────
+    if (path === '/results' || path === '/results/') {
+      const subject     = searchParams.get('subject')
+      const dateFrom    = searchParams.get('dateFrom')
+      const dateTo      = searchParams.get('dateTo')
       const studentName = searchParams.get('studentName')
 
-      const query = {}
-      if (subject && subject !== 'Todas') query.subject = subject
-      if (dateFrom || dateTo) {
-        query.createdAt = {}
-        if (dateFrom) query.createdAt.$gte = new Date(dateFrom)
-        if (dateTo) {
-          const end = new Date(dateTo)
-          end.setHours(23, 59, 59, 999)
-          query.createdAt.$lte = end
-        }
-      }
-      if (studentName) query.studentName = { $regex: studentName, $options: 'i' }
-
-      const results = await database.collection('results')
-        .find(query)
-        .sort({ createdAt: -1 })
+      let query = supabase
+        .from('exam_results')
+        .select('*')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
         .limit(100)
-        .toArray()
 
+      if (subject && subject !== 'Todas') query = query.eq('subject', subject)
+      if (dateFrom)     query = query.gte('created_at', dateFrom)
+      if (dateTo)       query = query.lte('created_at', dateTo)
+      if (studentName)  query = query.ilike('student_name', `%${studentName}%`)
+
+      const { data, error } = await query
+
+      if (error) throw new Error(error.message)
+
+      const results = (data || []).map(transformResult)
       const avgGrade = results.length > 0
-        ? Math.round((results.reduce((s, r) => s + (r.grade || 0), 0) / results.length) * 10) / 10
+        ? Math.round((results.reduce((s, r) => s + r.grade, 0) / results.length) * 10) / 10
         : 0
 
       return handleCORS(NextResponse.json({
         success: true,
         results,
-        total: results.length,
+        total:    results.length,
         avgGrade
       }))
     }
 
-    if (path === '/health' || path === '/health/') {
-      return handleCORS(NextResponse.json({ status: 'ok', service: 'Corrector de Examenes' }))
-    }
-
     return handleCORS(NextResponse.json({ error: 'Endpoint no encontrado' }, { status: 404 }))
+
   } catch (error) {
     console.error('GET error:', error)
     return handleCORS(NextResponse.json({ error: error.message }, { status: 500 }))
   }
 }
 
+// ── POST handler ──────────────────────────────────────────────────────────────
 export async function POST(request) {
   const { pathname } = new URL(request.url)
   const path = pathname.replace('/api', '')
 
   try {
+    // ── POST /api/grade ───────────────────────────────────────────────────────
     if (path === '/grade' || path === '/grade/') {
       const body = await request.json()
       const { imageBase64, mimeType, subject, gradeLevel, rubric } = body
@@ -177,8 +201,8 @@ export async function POST(request) {
       const startTime = Date.now()
       const gradeResult = await gradeExamWithAI({
         imageBase64,
-        mimeType: mimeType || 'image/jpeg',
-        subject: subject || 'Asignatura no especificada',
+        mimeType:   mimeType   || 'image/jpeg',
+        subject:    subject    || 'Asignatura no especificada',
         gradeLevel: gradeLevel || 'Nivel no especificado',
         rubric
       })
@@ -187,35 +211,47 @@ export async function POST(request) {
       return handleCORS(NextResponse.json({ success: true, ...gradeResult, timeTaken }))
     }
 
+    // ── POST /api/save-result ─────────────────────────────────────────────────
     if (path === '/save-result' || path === '/save-result/') {
       const body = await request.json()
       const {
-        grade, maxGrade, subject, gradeLevel, questions, timeTaken,
-        gradeLabel, studentName, studentGroup
+        grade, maxGrade, subject, gradeLevel,
+        questions, timeTaken, gradeLabel,
+        studentName, studentGroup
       } = body
 
-      const database = await connectToMongo()
-      const doc = {
-        id: uuidv4(),
-        studentName: studentName || '',
-        studentGroup: studentGroup || '',
-        grade,
-        maxGrade: maxGrade || 10,
-        gradeLabel: gradeLabel || '',
-        subject: subject || '',
-        gradeLevel: gradeLevel || '',
-        questions: questions || [],
-        timeTaken: timeTaken || 0,
-        totalQuestions: questions?.length || 0,
-        createdAt: new Date()
-      }
+      const { data, error } = await supabase
+        .from('exam_results')
+        .insert({
+          student_name:        studentName  || null,
+          student_group:       studentGroup || null,
+          subject:             subject      || '',
+          level:               gradeLevel   || '',
+          grade:               grade        ?? 0,
+          max_grade:           maxGrade     ?? 10,
+          feedback: {
+            gradeLabel:     gradeLabel || '',
+            questions:      questions  || [],
+            timeTaken:      timeTaken  || 0,
+            totalQuestions: questions?.length ?? 0
+          },
+          processed_anonymous: false
+          // teacher_id and school_id are NULL until auth is implemented
+        })
+        .select('id')
+        .single()
 
-      await database.collection('results').insertOne(doc)
+      if (error) throw new Error(error.message)
 
-      return handleCORS(NextResponse.json({ success: true, id: doc.id, message: 'Resultado guardado' }))
+      return handleCORS(NextResponse.json({
+        success: true,
+        id:      data.id,
+        message: 'Resultado guardado correctamente'
+      }))
     }
 
     return handleCORS(NextResponse.json({ error: 'Endpoint no encontrado' }, { status: 404 }))
+
   } catch (error) {
     console.error('POST error:', error)
     return handleCORS(NextResponse.json({ error: error.message }, { status: 500 }))

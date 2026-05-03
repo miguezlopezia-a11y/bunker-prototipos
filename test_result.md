@@ -180,6 +180,21 @@ backend:
         agent: "testing"
         comment: "✅ TESTED & WORKING. All filtering and metadata features working correctly: 1) No filters - returns all results with total=3, avgGrade=8.7, includes studentName/studentGroup fields. 2) subject=Matemáticas filter - returns only Matemáticas results (3 found). 3) dateFrom=2020-01-01 filter - returns results after date (3 found). 4) subject=Lengua filter - correctly returns empty array with total=0, avgGrade=0. All 5 test cases passed."
 
+  - task: "MongoDB to Supabase PostgreSQL migration"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "PRIORITY MIGRATION: Removed all MongoDB code, installed @supabase/supabase-js@2.105.1, rewrote route.js with Supabase client. Placeholder credentials set in .env. Created SUPABASE_SETUP.sql with 6 tables (schools, teachers, exam_results, rubrics, audit_log, consents). Health endpoint updated to return 'Supabase PostgreSQL'. All DB endpoints fail gracefully with placeholder creds."
+      - working: true
+        agent: "testing"
+        comment: "✅ MIGRATION VERIFIED (8/8 tests passed). Code verification: 1) NO MongoDB references in route.js (no MongoClient, mongodb, MONGO_URL). 2) package.json has @supabase/supabase-js@^2.105.1, NO mongodb dependency. 3) .env has all 3 Supabase env vars (NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY). 4) SUPABASE_SETUP.sql contains all 6 required tables. API tests: 5) GET /api/health returns HTTP 200 with database='Supabase PostgreSQL'. 6) GET /api/results fails gracefully with HTTP 500 + JSON error (not crash). 7) GET /api/results?subject=Matemáticas fails gracefully. 8) POST /api/save-result fails gracefully. All endpoints return proper JSON error responses with placeholder creds. Migration complete and ready for real Supabase credentials."
+
 frontend:
   - task: "Screen 1 - Scan & Submit UI"
     implemented: true
@@ -220,13 +235,12 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 3
+  test_sequence: 4
   run_ui: false
 
 test_plan:
   current_focus:
-    - "POST /api/save-result - Student ID fields (studentName, studentGroup, gradeLabel)"
-    - "GET /api/results - Query filtering and metadata (subject, dateFrom, dateTo, studentName, total, avgGrade)"
+    - "MongoDB to Supabase PostgreSQL migration"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -240,3 +254,8 @@ agent_communication:
     message: "Added 3 new features: 1) Student ID fields (studentName/studentGroup) on scan screen and in save-result 2) History dashboard - GET /api/results now supports query params: subject, dateFrom, dateTo, studentName + returns total and avgGrade. Frontend has history screen with subject+date filter pills. 3) Custom PDF - PrintDocument component with school logo placeholder, student info, grade circle, questions table, teacher signature. Test: POST /api/save-result with studentName and studentGroup fields, GET /api/results with subject filter, GET /api/results with dateFrom filter."
   - agent: "testing"
     message: "✅ ALL NEW FEATURES TESTED & WORKING (5/5 tests passed). Tested student ID fields and history filtering: 1) POST /api/save-result with studentName='Ana García López', studentGroup='3º ESO B', gradeLabel='Notable' - saves correctly with UUID. 2) GET /api/results (no filters) - returns studentName, studentGroup, total=3, avgGrade=8.7. 3) GET /api/results?subject=Matemáticas - filters correctly, returns 3 Matemáticas results. 4) GET /api/results?dateFrom=2020-01-01 - filters correctly, returns 3 results. 5) GET /api/results?subject=Lengua - correctly returns empty array with total=0. All backend features working perfectly. Ready for main agent to summarize and finish."
+  - agent: "main"
+    message: "PRIORITY MIGRATION COMPLETE: MongoDB fully removed, @supabase/supabase-js@2.105.1 installed. route.js completely rewritten with Supabase. No MongoDB references remain anywhere. Placeholder credentials set. Health endpoint returns database:Supabase PostgreSQL. DB endpoints fail gracefully with fetch error (expected with placeholder URL). Test: 1) GET /api/health should return {status:ok, database:Supabase PostgreSQL} 2) GET /api/results should return {error: fetch failed} with placeholder creds 3) POST /api/save-result should return {error: fetch failed} with placeholder creds. SQL file created at /app/SUPABASE_SETUP.sql for user to run in Supabase SQL Editor."
+  - agent: "testing"
+    message: "✅ SUPABASE MIGRATION FULLY VERIFIED (8/8 tests passed). Code verification: NO MongoDB code anywhere (route.js, package.json clean), @supabase/supabase-js@^2.105.1 installed, all 3 Supabase env vars present, SUPABASE_SETUP.sql contains all 6 tables (schools, teachers, exam_results, rubrics, audit_log, consents). API tests: GET /api/health returns HTTP 200 with database='Supabase PostgreSQL', all DB endpoints (GET /api/results, GET /api/results?subject=Matemáticas, POST /api/save-result) fail gracefully with HTTP 500 + JSON error responses (not crashes). Migration complete. App ready for real Supabase credentials after deployment."
+
