@@ -2,7 +2,6 @@ import { MongoClient } from 'mongodb'
 import { v4 as uuidv4 } from 'uuid'
 import { NextResponse } from 'next/server'
 
-// MongoDB connection
 let client
 let db
 
@@ -15,7 +14,6 @@ async function connectToMongo() {
   return db
 }
 
-// Helper for CORS
 function handleCORS(response) {
   response.headers.set('Access-Control-Allow-Origin', process.env.CORS_ORIGINS || '*')
   response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
@@ -27,36 +25,28 @@ export async function OPTIONS() {
   return handleCORS(new NextResponse(null, { status: 200 }))
 }
 
-// Extract JSON from AI response (handles markdown code blocks)
 function extractJSON(text) {
   if (!text) return null
-  // Remove markdown code blocks
-  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (codeBlockMatch) {
-    text = codeBlockMatch[1].trim()
-  }
-  // Find JSON object
-  const jsonStart = text.indexOf('{')
-  const jsonEnd = text.lastIndexOf('}')
-  if (jsonStart !== -1 && jsonEnd !== -1) {
-    return text.slice(jsonStart, jsonEnd + 1)
-  }
+  const block = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (block) text = block[1].trim()
+  const s = text.indexOf('{')
+  const e = text.lastIndexOf('}')
+  if (s !== -1 && e !== -1) return text.slice(s, e + 1)
   return text
 }
 
-// Call AI for exam grading
 async function gradeExamWithAI({ imageBase64, mimeType, subject, gradeLevel, rubric }) {
-  const systemPrompt = `Eres un corrector de exámenes experto en el sistema educativo español. 
-Re cibirás la imagen de un examen de un estudiante y la rúbrica o respuestas correctas.
+  const systemPrompt = `Eres un corrector de examenes experto en el sistema educativo espanol.
+Recibiras la imagen de un examen de un estudiante y la rubrica o respuestas correctas.
 
 Tu tarea:
 1. Analizar la imagen del examen y extraer las respuestas del estudiante
-2. Comparar cada respuesta con la rúbrica proporcionada
-3. Asignar puntuación a cada pregunta (siendo justo pero riguroso)
+2. Comparar cada respuesta con la rubrica proporcionada
+3. Asignar puntuacion a cada pregunta (siendo justo pero riguroso)
 4. Calcular la nota final sobre 10
 5. Proporcionar feedback breve y constructivo por cada pregunta
 
-IMPORTANTE: Responde ÚNICAMENTE con JSON válido. Sin texto adicional. Usa este formato exacto:
+IMPORTANTE: Responde UNICAMENTE con JSON valido. Sin texto adicional. Usa este formato exacto:
 {
   "grade": 7.5,
   "maxGrade": 10,
@@ -66,7 +56,7 @@ IMPORTANTE: Responde ÚNICAMENTE con JSON válido. Sin texto adicional. Usa este
     {
       "number": 1,
       "studentAnswer": "respuesta del estudiante",
-      "correctAnswer": "respuesta correcta según rúbrica",
+      "correctAnswer": "respuesta correcta segun rubrica",
       "pointsAwarded": 2.0,
       "maxPoints": 2.0,
       "feedback": "Breve feedback constructivo"
@@ -74,17 +64,14 @@ IMPORTANTE: Responde ÚNICAMENTE con JSON válido. Sin texto adicional. Usa este
   ]
 }`
 
-  const userText = `Asignatura: ${subject}\nNivel educativo: ${gradeLevel}\n\nRúbrica / Respuestas correctas:\n${rubric || 'No se ha proporcionado rúbrica. Evalúa según el contenido del examen con criterio general.'}\n\nPor favor, evalúa el examen y devuelve el resultado en formato JSON.`
+  const userText = `Asignatura: ${subject}\nNivel educativo: ${gradeLevel}\n\nRubrica / Respuestas correctas:\n${rubric || 'No se ha proporcionado rubrica. Evalua segun el contenido del examen con criterio general.'}\n\nPor favor, evalua el examen y devuelve el resultado en formato JSON.`
 
   const messages = [
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
       content: [
-        {
-          type: 'image_url',
-          image_url: { url: `data:${mimeType};base64,${imageBase64}` }
-        },
+        { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
         { type: 'text', text: userText }
       ]
     }
@@ -97,17 +84,12 @@ IMPORTANTE: Responde ÚNICAMENTE con JSON válido. Sin texto adicional. Usa este
       'Authorization': `Bearer ${process.env.EMERGENT_LLM_KEY}`,
       'X-App-ID': process.env.NEXT_PUBLIC_BASE_URL || ''
     },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      messages,
-      max_tokens: 2000,
-      temperature: 0.3
-    })
+    body: JSON.stringify({ model: 'gpt-4o', messages, max_tokens: 2000, temperature: 0.3 })
   })
 
   if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`AI API error: ${response.status} - ${errorText}`)
+    const err = await response.text()
+    throw new Error(`AI API error: ${response.status} - ${err}`)
   }
 
   const data = await response.json()
@@ -115,33 +97,58 @@ IMPORTANTE: Responde ÚNICAMENTE con JSON válido. Sin texto adicional. Usa este
   const jsonStr = extractJSON(content)
 
   try {
-    const result = JSON.parse(jsonStr)
-    return result
+    return JSON.parse(jsonStr)
   } catch (e) {
     throw new Error(`No se pudo parsear la respuesta de la IA: ${content.slice(0, 200)}`)
   }
 }
 
 export async function GET(request) {
-  const { pathname } = new URL(request.url)
+  const { pathname, searchParams } = new URL(request.url)
   const path = pathname.replace('/api', '')
 
   try {
-    // GET /api/results - Get all saved results
     if (path === '/results' || path === '/results/') {
-      const db = await connectToMongo()
-      const results = await db.collection('results')
-        .find({})
+      const database = await connectToMongo()
+
+      const subject = searchParams.get('subject')
+      const dateFrom = searchParams.get('dateFrom')
+      const dateTo = searchParams.get('dateTo')
+      const studentName = searchParams.get('studentName')
+
+      const query = {}
+      if (subject && subject !== 'Todas') query.subject = subject
+      if (dateFrom || dateTo) {
+        query.createdAt = {}
+        if (dateFrom) query.createdAt.$gte = new Date(dateFrom)
+        if (dateTo) {
+          const end = new Date(dateTo)
+          end.setHours(23, 59, 59, 999)
+          query.createdAt.$lte = end
+        }
+      }
+      if (studentName) query.studentName = { $regex: studentName, $options: 'i' }
+
+      const results = await database.collection('results')
+        .find(query)
         .sort({ createdAt: -1 })
-        .limit(50)
+        .limit(100)
         .toArray()
 
-      return handleCORS(NextResponse.json({ success: true, results }))
+      const avgGrade = results.length > 0
+        ? Math.round((results.reduce((s, r) => s + (r.grade || 0), 0) / results.length) * 10) / 10
+        : 0
+
+      return handleCORS(NextResponse.json({
+        success: true,
+        results,
+        total: results.length,
+        avgGrade
+      }))
     }
 
-    // GET /api/health
     if (path === '/health' || path === '/health/') {
-      return handleCORS(NextResponse.json({ status: 'ok', service: 'Corrector de Exámenes' }))
+      return handleCORS(NextResponse.json({ status: 'ok', service: 'Corrector de Examenes' }))
     }
 
     return handleCORS(NextResponse.json({ error: 'Endpoint no encontrado' }, { status: 404 }))
@@ -156,7 +163,6 @@ export async function POST(request) {
   const path = pathname.replace('/api', '')
 
   try {
-    // POST /api/grade - Grade an exam with AI
     if (path === '/grade' || path === '/grade/') {
       const body = await request.json()
       const { imageBase64, mimeType, subject, gradeLevel, rubric } = body
@@ -169,7 +175,6 @@ export async function POST(request) {
       }
 
       const startTime = Date.now()
-
       const gradeResult = await gradeExamWithAI({
         imageBase64,
         mimeType: mimeType || 'image/jpeg',
@@ -177,24 +182,23 @@ export async function POST(request) {
         gradeLevel: gradeLevel || 'Nivel no especificado',
         rubric
       })
+      const timeTaken = parseFloat(((Date.now() - startTime) / 1000).toFixed(1))
 
-      const timeTaken = ((Date.now() - startTime) / 1000).toFixed(1)
-
-      return handleCORS(NextResponse.json({
-        success: true,
-        ...gradeResult,
-        timeTaken: parseFloat(timeTaken)
-      }))
+      return handleCORS(NextResponse.json({ success: true, ...gradeResult, timeTaken }))
     }
 
-    // POST /api/save-result - Save grading result
     if (path === '/save-result' || path === '/save-result/') {
       const body = await request.json()
-      const { grade, maxGrade, subject, gradeLevel, questions, timeTaken, gradeLabel } = body
+      const {
+        grade, maxGrade, subject, gradeLevel, questions, timeTaken,
+        gradeLabel, studentName, studentGroup
+      } = body
 
-      const db = await connectToMongo()
-      const resultDoc = {
+      const database = await connectToMongo()
+      const doc = {
         id: uuidv4(),
+        studentName: studentName || '',
+        studentGroup: studentGroup || '',
         grade,
         maxGrade: maxGrade || 10,
         gradeLabel: gradeLabel || '',
@@ -206,13 +210,9 @@ export async function POST(request) {
         createdAt: new Date()
       }
 
-      await db.collection('results').insertOne(resultDoc)
+      await database.collection('results').insertOne(doc)
 
-      return handleCORS(NextResponse.json({
-        success: true,
-        id: resultDoc.id,
-        message: 'Resultado guardado correctamente'
-      }))
+      return handleCORS(NextResponse.json({ success: true, id: doc.id, message: 'Resultado guardado' }))
     }
 
     return handleCORS(NextResponse.json({ error: 'Endpoint no encontrado' }, { status: 404 }))

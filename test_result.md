@@ -150,6 +150,36 @@ backend:
         agent: "testing"
         comment: "✅ TESTED & WORKING. Successfully retrieves saved results from MongoDB, sorted by createdAt descending, limited to 50 records. Returns array with all result fields including questions breakdown. Verified data integrity matches saved records."
 
+  - task: "POST /api/save-result - Student ID fields (studentName, studentGroup, gradeLabel)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added new fields to save-result endpoint: studentName, studentGroup, gradeLabel. These fields are now stored in MongoDB with each result."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED & WORKING. Successfully saves results with new student ID fields. Test saved result with studentName='Ana García López', studentGroup='3º ESO B', gradeLabel='Notable'. All fields persisted correctly in MongoDB and returned in subsequent queries. ID generated: 004c0499-1cfd-4c26-ade8-02e1d704833f"
+
+  - task: "GET /api/results - Query filtering and metadata (subject, dateFrom, dateTo, studentName, total, avgGrade)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Enhanced GET /api/results with query parameters: subject, dateFrom, dateTo, studentName. Response now includes total count and avgGrade metadata. Supports filtering by subject (exact match or 'Todas'), date range, and student name (case-insensitive regex)."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED & WORKING. All filtering and metadata features working correctly: 1) No filters - returns all results with total=3, avgGrade=8.7, includes studentName/studentGroup fields. 2) subject=Matemáticas filter - returns only Matemáticas results (3 found). 3) dateFrom=2020-01-01 filter - returns results after date (3 found). 4) subject=Lengua filter - correctly returns empty array with total=0, avgGrade=0. All 5 test cases passed."
+
 frontend:
   - task: "Screen 1 - Scan & Submit UI"
     implemented: true
@@ -190,16 +220,15 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 2
+  test_sequence: 3
   run_ui: false
 
 test_plan:
   current_focus:
-    - "POST /api/grade - AI exam grading with vision"
-    - "POST /api/save-result - Save grading result to MongoDB"
-    - "GET /api/results - Retrieve saved results"
+    - "POST /api/save-result - Student ID fields (studentName, studentGroup, gradeLabel)"
+    - "GET /api/results - Query filtering and metadata (subject, dateFrom, dateTo, studentName, total, avgGrade)"
   stuck_tasks: []
-  test_all: true
+  test_all: false
   test_priority: "high_first"
 
 agent_communication:
@@ -207,3 +236,7 @@ agent_communication:
     message: "Built full Corrector de Examenes PWA. Backend uses GPT-4o via emergent proxy (https://integrations.emergentagent.com/llm/chat/completions) with EMERGENT_LLM_KEY env var. Frontend has two screens. Need to test backend endpoints. For the /api/grade test, use a real exam image (base64 encoded, JPEG/PNG/WEBP with actual content - handwritten text or printed exam). The AI grading needs an actual image to analyze. IMPORTANT: Read /app/image_testing.md for image handling rules."
   - agent: "testing"
     message: "✅ ALL BACKEND TESTS PASSED (4/4). Fixed critical .env formatting bug - CORS_ORIGINS and EMERGENT_LLM_KEY were on same line causing API key to be undefined. After fix, all endpoints working: 1) GET /api/health returns correct status, 2) POST /api/grade successfully grades exams with GPT-4o vision (~2.8s response), 3) POST /api/save-result saves to MongoDB with UUID, 4) GET /api/results retrieves saved records. Backend is fully functional. Ready for main agent to summarize and finish."
+  - agent: "main"
+    message: "Added 3 new features: 1) Student ID fields (studentName/studentGroup) on scan screen and in save-result 2) History dashboard - GET /api/results now supports query params: subject, dateFrom, dateTo, studentName + returns total and avgGrade. Frontend has history screen with subject+date filter pills. 3) Custom PDF - PrintDocument component with school logo placeholder, student info, grade circle, questions table, teacher signature. Test: POST /api/save-result with studentName and studentGroup fields, GET /api/results with subject filter, GET /api/results with dateFrom filter."
+  - agent: "testing"
+    message: "✅ ALL NEW FEATURES TESTED & WORKING (5/5 tests passed). Tested student ID fields and history filtering: 1) POST /api/save-result with studentName='Ana García López', studentGroup='3º ESO B', gradeLabel='Notable' - saves correctly with UUID. 2) GET /api/results (no filters) - returns studentName, studentGroup, total=3, avgGrade=8.7. 3) GET /api/results?subject=Matemáticas - filters correctly, returns 3 Matemáticas results. 4) GET /api/results?dateFrom=2020-01-01 - filters correctly, returns 3 results. 5) GET /api/results?subject=Lengua - correctly returns empty array with total=0. All backend features working perfectly. Ready for main agent to summarize and finish."
