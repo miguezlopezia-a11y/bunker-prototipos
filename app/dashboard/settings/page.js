@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
 import { Settings as SettingsIcon, Bell, Lock, Zap, Database } from 'lucide-react'
 
@@ -12,6 +12,19 @@ export default function SettingsPage() {
     alertThreshold: 5,
     sessionTimeout: 30
   })
+
+  // Load settings from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('userSettings')
+    if (saved) {
+      setSettings(JSON.parse(saved))
+    }
+  }, [])
+
+  function handleSave() {
+    localStorage.setItem('userSettings', JSON.stringify(settings))
+    alert('✅ Configuración guardada correctamente')
+  }
 
   return (
     <DashboardLayout>
@@ -132,7 +145,10 @@ export default function SettingsPage() {
 
         {/* Save button */}
         <div className="flex justify-end">
-          <button className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">
+          <button 
+            onClick={handleSave}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+          >
             Guardar configuración
           </button>
         </div>

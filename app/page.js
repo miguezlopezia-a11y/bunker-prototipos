@@ -186,6 +186,12 @@ export default function App() {
   const [gradeLevel, setGradeLevel] = useState('ESO')
   const [rubric, setRubric] = useState('')
 
+  // Bulk mode
+  const [bulkMode, setBulkMode] = useState(false)
+  const [bulkQueue, setBulkQueue] = useState([])
+  const [bulkProcessing, setBulkProcessing] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 })
+
   // UI
   const [loading, setLoading] = useState(false)
   const [loadingMsg, setLoadingMsg] = useState('')
@@ -245,8 +251,74 @@ export default function App() {
     catch { setError('Error al procesar la imagen.') }
   }, [])
 
-  const handleFileInput = (e) => {
-    const f = e.target.files?.[0]; if (f) handleImageSelected(f); e.target.value = ''
+  const handleFileInput = async (e) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    
+    if (bulkMode && files.length > 1) {
+      // Bulk mode: Process multiple files
+      setBulkQueue(files)
+      setBulkProgress({ current: 0, total: files.length })
+      await processBulkExams(files)
+    } else {
+      // Single mode
+      const f = files[0]
+      if (f) handleImageSelected(f)
+    }
+    
+    e.target.value = ''
+  }
+
+  const processBulkExams = async (files) => {
+    setBulkProcessing(true)
+    const results = []
+    
+    for (let i = 0; i < files.length; i++) {
+      setBulkProgress({ current: i + 1, total: files.length })
+      
+      try {
+        const imageData = await compressImage(files[i])
+        const res = await fetch('/api/grade', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            imageBase64: imageData.base64, 
+            mimeType: imageData.mimeType, 
+            subject, 
+            gradeLevel, 
+            rubric 
+          })
+        })
+        const data = await res.json()
+        
+        if (data.success) {
+          results.push({ ...data, studentName, studentGroup })
+          // Auto-save each result
+          await fetch('/api/save-result', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...data,
+              subject,
+              gradeLevel,
+              studentName,
+              studentGroup
+            })
+          })
+        }
+      } catch (error) {
+        console.error(`Error processing exam ${i + 1}:`, error)
+      }
+      
+      // Small delay between requests to avoid rate limiting
+      if (i < files.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
+    
+    setBulkProcessing(false)
+    alert(`✅ Procesados ${results.length} de ${files.length} exámenes correctamente`)
+    fetchHistory() // Refresh history
   }
 
   const handleSubmit = async () => {
@@ -380,16 +452,37 @@ export default function App() {
 
                 {/* Image capture */}
                 <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100">
+                  {/* Bulk mode toggle */}
+                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-slate-700">Modo por lotes</span>
+                      <span className="text-xs text-slate-500">(Múltiples exámenes)</span>
+                    </div>
+                    <button
+                      onClick={() => setBulkMode(!bulkMode)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        bulkMode ? 'bg-blue-600' : 'bg-slate-300'
+                      }`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        bulkMode ? 'translate-x-6' : 'translate-x-1'
+                      }`} />
+                    </button>
+                  </div>
+                  
                   <button
                     onClick={() => cameraRef.current?.click()}
-                    className="w-full bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-7 flex flex-col items-center gap-3 transition-all active:scale-95"
+                    disabled={bulkMode}
+                    className="w-full bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-7 flex flex-col items-center gap-3 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">
                       <span className="text-4xl">📷</span>
                     </div>
                     <div className="text-center">
                       <p className="text-xl font-bold">Escanear Examen</p>
-                      <p className="text-blue-200 text-sm mt-0.5">Usa la cámara para fotografiar el examen</p>
+                      <p className="text-blue-200 text-sm mt-0.5">
+                        {bulkMode ? 'No disponible en modo por lotes' : 'Usa la cámara para fotografiar el examen'}
+                      </p>
                     </div>
                   </button>
                   <button
@@ -397,12 +490,35 @@ export default function App() {
                     className="w-full py-3.5 flex items-center justify-center gap-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors border-t border-slate-100"
                   >
                     <span className="text-xl">🖼</span>
-                    <span className="text-sm font-medium">Subir desde galería / archivo</span>
+                    <span className="text-sm font-medium">
+                      {bulkMode ? 'Seleccionar múltiples exámenes' : 'Subir desde galería / archivo'}
+                    </span>
                   </button>
                 </div>
 
+                {/* Bulk processing progress */}
+                {bulkProcessing && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-blue-900">
+                        Procesando exámenes...
+                      </span>
+                      <span className="text-sm font-bold text-blue-700">
+                        {bulkProgress.current} / {bulkProgress.total}
+                      </span>
+                    </div>
+                    <div className="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className="bg-blue-600 h-full transition-all duration-300"
+                        style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-blue-700 mt-2">Por favor espera, esto puede tomar varios minutos...</p>
+                  </div>
+                )}
+
                 <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileInput} />
-                <input ref={galleryRef} type="file" accept="image/*" className="hidden" onChange={handleFileInput} />
+                <input ref={galleryRef} type="file" accept="image/*" multiple={bulkMode} className="hidden" onChange={handleFileInput} />
 
                 {/* Image preview */}
                 {imageData && (

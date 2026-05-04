@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { handleCORS, handleOPTIONS } from '@/lib/cors'
+import { writeAuditLog, getClientIP, AuditActions } from '@/lib/auditLog'
 
 export async function OPTIONS() {
   return handleOPTIONS()
@@ -38,6 +39,22 @@ export async function POST(request) {
       .single()
 
     if (error) throw new Error(error.message)
+
+    // Audit log: Result saved
+    await writeAuditLog({
+      userId: null, // TODO: Get from auth when implemented
+      schoolId: null, // TODO: Get from auth when implemented  
+      action: AuditActions.SAVE_EXAM_RESULT,
+      affectedTable: 'exam_results',
+      affectedRecordId: data.id,
+      ipAddress: getClientIP(request),
+      metadata: {
+        studentName: studentName || 'Anónimo',
+        subject,
+        grade,
+        processedAnonymous
+      }
+    })
 
     return handleCORS(NextResponse.json({
       success: true,

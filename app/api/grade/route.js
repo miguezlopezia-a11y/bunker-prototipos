@@ -3,6 +3,7 @@ import { handleCORS, handleOPTIONS } from '@/lib/cors'
 import { rateLimit } from '@/lib/rateLimit'
 import { validateImageUpload } from '@/lib/fileValidation'
 import { sanitizeStudentData } from '@/lib/sanitize'
+import { writeAuditLog, getClientIP, AuditActions } from '@/lib/auditLog'
 
 export async function OPTIONS() {
   return handleOPTIONS()
@@ -140,6 +141,23 @@ export async function POST(request) {
       rubric: sanitized.rubric
     })
     const timeTaken = parseFloat(((Date.now() - startTime) / 1000).toFixed(1))
+
+    // Audit log: Exam graded
+    await writeAuditLog({
+      userId: null, // TODO: Get from auth when implemented
+      schoolId: null, // TODO: Get from auth when implemented
+      action: AuditActions.GRADE_EXAM,
+      affectedTable: null,
+      affectedRecordId: null,
+      ipAddress: getClientIP(request),
+      metadata: {
+        subject: sanitized.subject,
+        gradeLevel: sanitized.gradeLevel,
+        grade: gradeResult.grade,
+        timeTaken,
+        imageSize: validation.sizeMB + ' MB'
+      }
+    })
 
     return handleCORS(NextResponse.json({ 
       success: true, 

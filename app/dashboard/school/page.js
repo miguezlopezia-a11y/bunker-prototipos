@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
 import { useAuth } from '@/contexts/AuthContext'
-import { School, Upload, Loader2, Save } from 'lucide-react'
+import { School, Upload, Loader2, Save, UserPlus, Mail, X } from 'lucide-react'
 
 export default function SchoolConfigPage() {
   const { school, teacher } = useAuth()
@@ -16,6 +16,11 @@ export default function SchoolConfigPage() {
     dpo_email: '',
     logo_url: ''
   })
+  
+  // Teacher invitation state
+  const [showInviteModal, setShowInviteModal] = useState(false)
+  const [inviteData, setInviteData] = useState({ email: '', name: '', role: 'teacher' })
+  const [inviting, setInviting] = useState(false)
 
   useEffect(() => {
     if (school) {
@@ -38,6 +43,36 @@ export default function SchoolConfigPage() {
     
     setSaving(false)
     alert('Configuración guardada correctamente')
+  }
+
+  async function handleInviteTeacher(e) {
+    e.preventDefault()
+    setInviting(true)
+
+    try {
+      const response = await fetch('/api/invite-teacher', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...inviteData,
+          schoolId: school?.id
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        alert(`✅ Invitación enviada a ${inviteData.email}`)
+        setShowInviteModal(false)
+        setInviteData({ email: '', name: '', role: 'teacher' })
+      } else {
+        alert(`❌ Error: ${data.error}`)
+      }
+    } catch (error) {
+      alert(`❌ Error al enviar invitación: ${error.message}`)
+    } finally {
+      setInviting(false)
+    }
   }
 
   if (teacher?.role !== 'admin') {
@@ -168,6 +203,116 @@ export default function SchoolConfigPage() {
             </button>
           </div>
         </form>
+
+        {/* Teacher Invitation Section */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mt-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Gestión de Profesores</h2>
+              <p className="text-sm text-slate-600">Invita a nuevos profesores al centro</p>
+            </div>
+            <button
+              onClick={() => setShowInviteModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
+            >
+              <UserPlus className="w-4 h-4" />
+              Invitar Profesor
+            </button>
+          </div>
+          
+          <p className="text-sm text-slate-500">
+            ⚠️ <strong>Sin autoregistro:</strong> Los profesores solo pueden acceder mediante invitación. 
+            Se enviará un email con un enlace para establecer contraseña.
+          </p>
+        </div>
+
+        {/* Invite Modal */}
+        {showInviteModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl p-6 max-w-md w-full">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900">Invitar Profesor</h3>
+                <button
+                  onClick={() => setShowInviteModal(false)}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleInviteTeacher} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Email *
+                  </label>
+                  <input
+                    type="email"
+                    value={inviteData.email}
+                    onChange={(e) => setInviteData({...inviteData, email: e.target.value})}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="profesor@colegio.es"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Nombre completo *
+                  </label>
+                  <input
+                    type="text"
+                    value={inviteData.name}
+                    onChange={(e) => setInviteData({...inviteData, name: e.target.value})}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="María García López"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Rol
+                  </label>
+                  <select
+                    value={inviteData.role}
+                    onChange={(e) => setInviteData({...inviteData, role: e.target.value})}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg"
+                  >
+                    <option value="teacher">Profesor</option>
+                    <option value="school_admin">Administrador del Centro</option>
+                  </select>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowInviteModal(false)}
+                    className="flex-1 px-4 py-2 border border-slate-300 rounded-lg font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={inviting}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {inviting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Enviando...
+                      </>
+                    ) : (
+                      <>
+                        <Mail className="w-4 h-4" />
+                        Enviar Invitación
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   )

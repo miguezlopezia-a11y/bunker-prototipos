@@ -42,8 +42,30 @@ export default function HistoryPage() {
   }
 
   async function exportCSV() {
-    // TODO: Implement CSV export
-    alert('Exportando a CSV...')
+    try {
+      const params = new URLSearchParams()
+      if (filters.subject !== 'Todas') params.append('subject', filters.subject)
+      if (filters.dateFrom) params.append('dateFrom', filters.dateFrom)
+      if (filters.dateTo) params.append('dateTo', filters.dateTo)
+      if (filters.studentName) params.append('studentName', filters.studentName)
+
+      const response = await fetch(`/api/export-csv?${params.toString()}`)
+      
+      if (!response.ok) throw new Error('Error al exportar')
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `examenes_${new Date().toISOString().split('T')[0]}.csv`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error) {
+      console.error('Error exporting CSV:', error)
+      alert('Error al exportar CSV. Intente nuevamente.')
+    }
   }
 
   return (

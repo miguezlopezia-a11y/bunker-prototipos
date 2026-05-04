@@ -4,6 +4,7 @@ import React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
+import SessionTimeout from './SessionTimeout'
 import { 
   GraduationCap, 
   BarChart3, 
@@ -34,8 +35,21 @@ export default function DashboardLayout({ children }) {
 
   const isAdmin = teacher?.role === 'admin'
 
+  // Get session timeout from settings (default 30 minutes)
+  const [sessionTimeout, setSessionTimeout] = React.useState(30)
+  
+  React.useEffect(() => {
+    const settings = localStorage.getItem('userSettings')
+    if (settings) {
+      const parsed = JSON.parse(settings)
+      setSessionTimeout(parsed.sessionTimeout || 30)
+    }
+  }, [])
+
   return (
     <div className="min-h-screen bg-slate-50">
+      <SessionTimeout timeoutMinutes={sessionTimeout} />
+      
       {/* Sidebar */}
       <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200">
         <div className="flex flex-col h-full">
