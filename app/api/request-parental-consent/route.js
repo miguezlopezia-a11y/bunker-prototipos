@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { handleCORS, handleOPTIONS } from '@/lib/cors'
 import { writeAuditLog, getClientIP, AuditActions } from '@/lib/auditLog'
+import { sendParentalConsentRequest } from '@/lib/email'
 
 export async function OPTIONS() {
   return handleOPTIONS()
@@ -54,37 +55,15 @@ export async function POST(request) {
       throw new Error(`Error al crear registro de consentimiento: ${consentError.message}`)
     }
 
-    // TODO: Send email to parent with consent link
-    // For now, we'll just create the record
-    // In production, integrate with email service (SendGrid, AWS SES, etc.)
-    
     const consentLink = `${process.env.NEXT_PUBLIC_BASE_URL}/consent/${consentData.id}`
     
-    console.log(`
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    📧 EMAIL TO SEND (Parental Consent Request)
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    To: ${parentEmail}
-    Subject: Consentimiento Parental - Corrector de Exámenes IA
-    
-    Estimado padre/madre/tutor:
-    
-    Según el Art. 92 de la LOPDGDD, solicitamos su consentimiento 
-    para el tratamiento de datos educativos de su hijo/a:
-    
-    Estudiante: ${studentName}
-    Centro: [Nombre del centro]
-    
-    Por favor, confirme su consentimiento haciendo clic aquí:
-    ${consentLink}
-    
-    Este consentimiento es obligatorio para poder procesar los 
-    exámenes de su hijo/a mediante inteligencia artificial.
-    
-    Atentamente,
-    Sistema Corrector de Exámenes
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    `)
+    // Send parental consent request email
+    await sendParentalConsentRequest({
+      parentEmail,
+      studentName,
+      schoolName: 'Su Centro Educativo', // TODO: Fetch from schoolId
+      consentLink
+    })
 
     // Audit log
     await writeAuditLog({

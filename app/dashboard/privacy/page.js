@@ -2,11 +2,36 @@
 
 import React, { useState } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
-import { Shield, AlertTriangle, Download, Trash2, CheckCircle, XCircle } from 'lucide-react'
+import { Shield, AlertTriangle, Download, Trash2, CheckCircle, XCircle, FileText, Loader2 } from 'lucide-react'
 
 export default function PrivacyPage() {
   const [anonymousMode, setAnonymousMode] = useState(false)
   const [retentionMonths, setRetentionMonths] = useState(24)
+  const [generatingRoPA, setGeneratingRoPA] = useState(false)
+
+  async function handleGenerateRoPA() {
+    setGeneratingRoPA(true)
+    try {
+      const response = await fetch('/api/generate-ropa')
+      
+      if (!response.ok) throw new Error('Error al generar RoPA')
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `RoPA_${new Date().toISOString().split('T')[0]}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error) {
+      console.error('Error generating RoPA:', error)
+      alert('Error al generar el documento RoPA. Intente nuevamente.')
+    } finally {
+      setGeneratingRoPA(false)
+    }
+  }
 
   return (
     <DashboardLayout>
@@ -74,6 +99,43 @@ export default function PrivacyPage() {
               <p className="text-xs text-slate-500 mt-2">
                 Después de este periodo, los datos se eliminarán automáticamente (soft delete). Los datos pueden recuperarse dentro de 30 días adicionales.
               </p>
+            </div>
+          </div>
+        </div>
+
+        {/* RoPA Generator */}
+        <div className="bg-gradient-to-br from-purple-50 to-blue-50 border border-purple-200 rounded-xl p-6 mb-6">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-purple-100 rounded-lg">
+              <FileText className="w-6 h-6 text-purple-600" />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-lg font-semibold text-slate-900 mb-2">
+                Registro de Actividades de Tratamiento (RoPA)
+              </h2>
+              <p className="text-sm text-slate-700 mb-4">
+                <strong>Art. 30 RGPD:</strong> Documento obligatorio que detalla todas las actividades de tratamiento de datos personales realizadas por el centro educativo.
+              </p>
+              <p className="text-xs text-slate-600 mb-4">
+                Incluye: responsable del tratamiento, DPO, categorías de datos, bases legales, destinatarios, plazos de conservación y medidas de seguridad.
+              </p>
+              <button
+                onClick={handleGenerateRoPA}
+                disabled={generatingRoPA}
+                className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {generatingRoPA ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Generando PDF...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-5 h-5" />
+                    Generar RoPA (PDF)
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

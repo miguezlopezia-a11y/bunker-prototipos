@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { handleCORS, handleOPTIONS } from '@/lib/cors'
 import { writeAuditLog, getClientIP, AuditActions } from '@/lib/auditLog'
+import { sendTeacherInvitation } from '@/lib/email'
 
 export async function OPTIONS() {
   return handleOPTIONS()
@@ -78,6 +79,14 @@ export async function POST(request) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
       throw new Error('Error al crear registro de profesor')
     }
+
+    // Send invitation email
+    await sendTeacherInvitation({
+      email,
+      name,
+      inviteLink: `${process.env.NEXT_PUBLIC_BASE_URL}/dashboard`,
+      schoolName: 'Su Centro Educativo' // TODO: Fetch from schoolId
+    })
 
     // Audit log: Teacher invited
     await writeAuditLog({
