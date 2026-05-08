@@ -205,3 +205,12 @@ COMMENT ON VIEW v_precision_stats IS 'Estadisticas mensuales de precision OCR po
 -- SELECT table_name FROM information_schema.tables
 -- WHERE table_name IN ('exam_documents','exam_document_pages');
 -- ============================================================================
+SELECT 'rubrics columns' AS section, column_name AS item FROM information_schema.columns
+WHERE table_name = 'rubrics' AND column_name IN ('wizard_config','segment','department','exam_type')
+UNION ALL
+SELECT 'exam_results columns' AS section, column_name AS item FROM information_schema.columns
+WHERE table_name = 'exam_results' AND column_name IN ('ocr_confidence','wizard_config')
+UNION ALL
+SELECT 'new tables' AS section, table_name AS item FROM information_schema.tables
+WHERE table_name IN ('exam_documents','exam_document_pages')
+ORDER BY section, item;
