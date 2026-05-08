@@ -4,6 +4,7 @@ import { rateLimit } from '@/lib/rateLimit'
 import { validateImageUpload } from '@/lib/fileValidation'
 import { sanitizeStudentData } from '@/lib/sanitize'
 import { writeAuditLog, getClientIP, AuditActions } from '@/lib/auditLog'
+import { getPromptFromWizard } from '@/lib/promptBuilder'
 
 export async function OPTIONS() {
   return handleOPTIONS()
@@ -20,12 +21,12 @@ function extractJSON(text) {
   return text
 }
 
-// AI exam grading with Spanish RGPD compliance and minor protection
-async function gradeExamWithAI({ imageBase64, mimeType, subject, gradeLevel, rubric }) {
-  const systemPrompt = `Eres un corrector de examenes experto en el sistema educativo espanol.
+// Default Spanish prompt (fallback if no wizard config)
+function buildDefaultPrompt() {
+  return `Eres un corrector de examenes experto en el sistema educativo espanol.
 Recibiras la imagen de un examen de un estudiante y la rubrica o respuestas correctas.
 
-⚠️ PROTECCION DE MENORES (LOPDGDD Art. 92): 
+⚠️ PROTECCION DE MENORES (LOPDGDD Art. 92):
 - NO identifiques ni describas rostros, nombres completos o datos personales visibles
 - Enfocate UNICAMENTE en el contenido academico del examen
 
@@ -35,6 +36,7 @@ Tu tarea:
 3. Asignar puntuacion a cada pregunta (siendo justo pero riguroso)
 4. Calcular la nota final sobre 10
 5. Proporcionar feedback breve y constructivo por cada pregunta
+6. Estimar tu confianza OCR (0.0 a 1.0) en la lectura del manuscrito
 
 IMPORTANTE: Responde UNICAMENTE con JSON valido. Sin texto adicional. Usa este formato exacto:
 {
@@ -42,6 +44,7 @@ IMPORTANTE: Responde UNICAMENTE con JSON valido. Sin texto adicional. Usa este f
   "maxGrade": 10,
   "totalQuestions": 5,
   "gradeLabel": "Notable",
+  "ocr_confidence": 0.985,
   "questions": [
     {
       "number": 1,
@@ -52,7 +55,28 @@ IMPORTANTE: Responde UNICAMENTE con JSON valido. Sin texto adicional. Usa este f
       "feedback": "Breve feedback constructivo"
     }
   ]
-}`
+}
+
+CONFIANZA OCR (ocr_confidence):
+- Evalua la calidad de lectura del texto manuscrito (0.0 a 1.0)
+- Considera: legibilidad, calidad de imagen, tachones, borrones
+- Si la confianza es < 0.90, advierte en gradeLabel`
+}
+
+// AI exam grading with optional wizard config
+async function gradeExamWithAI({ imageBase64, mimeType, subject, gradeLevel, rubric, wizardConfig }) {
+  // Build prompt: wizard config takes priority, fallback to default
+  let systemPrompt
+  if (wizardConfig && wizardConfig.segment) {
+    try {
+      systemPrompt = getPromptFromWizard(wizardConfig)
+    } catch (e) {
+      console.error('Wizard prompt error, using default:', e.message)
+      systemPrompt = buildDefaultPrompt()
+    }
+  } else {
+    systemPrompt = buildDefaultPrompt()
+  }
 
   const userText = `Asignatura: ${subject}\nNivel educativo: ${gradeLevel}\n\nRubrica / Respuestas correctas:\n${rubric || 'No se ha proporcionado rubrica. Evalua segun el contenido del examen con criterio general.'}\n\nPor favor, evalua el examen y devuelve el resultado en formato JSON.`
 
@@ -74,7 +98,7 @@ IMPORTANTE: Responde UNICAMENTE con JSON valido. Sin texto adicional. Usa este f
       'Authorization': `Bearer ${process.env.EMERGENT_LLM_KEY}`,
       'X-App-ID': process.env.NEXT_PUBLIC_BASE_URL || ''
     },
-    body: JSON.stringify({ model: 'gpt-4o', messages, max_tokens: 2000, temperature: 0.3 })
+    body: JSON.stringify({ model: 'gpt-4o', messages, max_tokens: 3000, temperature: 0.3 })
   })
 
   if (!response.ok) {
@@ -87,7 +111,15 @@ IMPORTANTE: Responde UNICAMENTE con JSON valido. Sin texto adicional. Usa este f
   const jsonStr = extractJSON(content)
 
   try {
-    return JSON.parse(jsonStr)
+    const parsed = JSON.parse(jsonStr)
+    // Ensure ocr_confidence is a number between 0 and 1
+    if (parsed.ocr_confidence !== undefined && parsed.ocr_confidence !== null) {
+      const c = parseFloat(parsed.ocr_confidence)
+      parsed.ocr_confidence = isNaN(c) ? null : Math.max(0, Math.min(1, c))
+    } else {
+      parsed.ocr_confidence = null
+    }
+    return parsed
   } catch {
     throw new Error(`No se pudo parsear la respuesta de la IA: ${content.slice(0, 200)}`)
   }
@@ -98,11 +130,11 @@ export async function POST(request) {
     // Rate limiting
     const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
     const rateCheck = rateLimit('/api/grade', ip)
-    
+
     if (!rateCheck.allowed) {
       return handleCORS(NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           error: `L\u00edmite de solicitudes excedido. Intente nuevamente en ${rateCheck.resetIn} segundos.`,
           retryAfter: rateCheck.resetIn
         },
@@ -111,7 +143,7 @@ export async function POST(request) {
     }
 
     const body = await request.json()
-    const { imageBase64, mimeType, subject, gradeLevel, rubric } = body
+    const { imageBase64, mimeType, subject, gradeLevel, rubric, wizardConfig } = body
 
     if (!imageBase64) {
       return handleCORS(NextResponse.json(
@@ -138,14 +170,15 @@ export async function POST(request) {
       mimeType:   mimeType   || 'image/jpeg',
       subject:    sanitized.subject    || 'Asignatura no especificada',
       gradeLevel: sanitized.gradeLevel || 'Nivel no especificado',
-      rubric: sanitized.rubric
+      rubric: sanitized.rubric,
+      wizardConfig: wizardConfig || null
     })
     const timeTaken = parseFloat(((Date.now() - startTime) / 1000).toFixed(1))
 
     // Audit log: Exam graded
     await writeAuditLog({
-      userId: null, // TODO: Get from auth when implemented
-      schoolId: null, // TODO: Get from auth when implemented
+      userId: null,
+      schoolId: null,
       action: AuditActions.GRADE_EXAM,
       affectedTable: null,
       affectedRecordId: null,
@@ -155,19 +188,20 @@ export async function POST(request) {
         gradeLevel: sanitized.gradeLevel,
         grade: gradeResult.grade,
         timeTaken,
+        ocrConfidence: gradeResult.ocr_confidence,
+        wizardSegment: wizardConfig?.segment || null,
         imageSize: validation.sizeMB + ' MB'
       }
     })
 
-    return handleCORS(NextResponse.json({ 
-      success: true, 
-      ...gradeResult, 
+    return handleCORS(NextResponse.json({
+      success: true,
+      ...gradeResult,
       timeTaken,
       remaining: rateCheck.remaining
     }))
   } catch (error) {
     console.error('POST /api/grade error:', error)
-    // Generic error (security - don't leak stack traces)
     return handleCORS(NextResponse.json(
       { error: 'Error al procesar el examen. Intente nuevamente.' },
       { status: 500 }

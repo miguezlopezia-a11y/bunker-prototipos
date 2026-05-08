@@ -14,8 +14,17 @@ export async function POST(request) {
       grade, maxGrade, subject, gradeLevel,
       questions, timeTaken, gradeLabel,
       studentName, studentGroup,
-      processedAnonymous = false
+      processedAnonymous = false,
+      ocr_confidence = null,
+      wizardConfig = null
     } = body
+
+    // Sanitize ocr_confidence: must be DECIMAL(5,4) between 0 and 1
+    let cleanConfidence = null
+    if (ocr_confidence !== null && ocr_confidence !== undefined) {
+      const c = parseFloat(ocr_confidence)
+      if (!isNaN(c)) cleanConfidence = Math.max(0, Math.min(1, c))
+    }
 
     const { data, error } = await supabaseAdmin
       .from('exam_results')
@@ -32,7 +41,9 @@ export async function POST(request) {
           timeTaken:      timeTaken  || 0,
           totalQuestions: questions?.length ?? 0
         },
-        processed_anonymous: processedAnonymous
+        processed_anonymous: processedAnonymous,
+        ocr_confidence:      cleanConfidence,
+        wizard_config:       wizardConfig || {}
         // teacher_id and school_id are NULL until auth is implemented
       })
       .select('id')

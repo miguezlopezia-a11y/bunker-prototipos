@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import ExamConfigWizard from '@/components/ExamConfigWizard'
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 
@@ -192,6 +193,18 @@ export default function App() {
   const [bulkProcessing, setBulkProcessing] = useState(false)
   const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 })
 
+  // Exam Config Wizard (Feature #1)
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const [wizardConfig, setWizardConfig] = useState(null) // active config for current session
+  const [pendingAction, setPendingAction] = useState(null) // 'single' | 'bulk' | 'pdf'
+
+  // PDF Import (Feature #2)
+  const [inputMode, setInputMode] = useState('camera') // 'camera' | 'gallery' | 'pdf'
+  const [pdfFile, setPdfFile] = useState(null)
+  const [pdfStage, setPdfStage] = useState('') // 'extracting' | 'grading' | 'done'
+  const [pdfProgress, setPdfProgress] = useState({ current: 0, total: 0 })
+  const pdfRef = useRef(null)
+
   // UI
   const [loading, setLoading] = useState(false)
   const [loadingMsg, setLoadingMsg] = useState('')
@@ -286,7 +299,8 @@ export default function App() {
             mimeType: imageData.mimeType, 
             subject, 
             gradeLevel, 
-            rubric 
+            rubric,
+            wizardConfig
           })
         })
         const data = await res.json()
@@ -302,7 +316,9 @@ export default function App() {
               subject,
               gradeLevel,
               studentName,
-              studentGroup
+              studentGroup,
+              ocr_confidence: data.ocr_confidence,
+              wizardConfig
             })
           })
         }
@@ -331,12 +347,12 @@ export default function App() {
       const res = await fetch('/api/grade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: imageData.base64, mimeType: imageData.mimeType, subject, gradeLevel, rubric })
+        body: JSON.stringify({ imageBase64: imageData.base64, mimeType: imageData.mimeType, subject, gradeLevel, rubric, wizardConfig })
       })
       const data = await res.json()
       clearInterval(t)
       if (!res.ok || !data.success) throw new Error(data.error || 'Error al corregir')
-      setResults({ ...data, subject, gradeLevel, studentName, studentGroup })
+      setResults({ ...data, subject, gradeLevel, studentName, studentGroup, wizardConfig })
       setSaved(false); setResultSource('new'); setScreen('results')
     } catch (e) { clearInterval(t); setError(e.message || 'Error de conexión.') }
     finally { setLoading(false) }
@@ -349,11 +365,140 @@ export default function App() {
       const res = await fetch('/api/save-result', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(results)
+        body: JSON.stringify({
+          ...results,
+          ocr_confidence: results.ocr_confidence,
+          wizardConfig: results.wizardConfig || wizardConfig
+        })
       })
       const data = await res.json()
       if (data.success) setSaved(true)
     } catch {} finally { setSaving(false) }
+  }
+
+  // PDF Import handler (Feature #2)
+  const handlePdfFileSelected = (e) => {
+    const f = e.target.files?.[0]
+    if (f) setPdfFile(f)
+    e.target.value = ''
+  }
+
+  const runPdfImport = async (configToUse) => {
+    if (!pdfFile) { setError('Selecciona un archivo PDF primero.'); return }
+    const cfg = configToUse || wizardConfig
+    if (!cfg) {
+      setPendingAction('pdf')
+      setWizardOpen(true)
+      return
+    }
+    setError('')
+    setPdfStage('extracting')
+    setPdfProgress({ current: 0, total: 0 })
+
+    try {
+      // Step 1: Upload PDF and extract pages
+      const formData = new FormData()
+      formData.append('pdf', pdfFile)
+      formData.append('wizardConfig', JSON.stringify(cfg))
+      formData.append('pagesPerExam', '1')
+
+      const res = await fetch('/api/import-pdf', {
+        method: 'POST',
+        body: formData
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) throw new Error(data.error || 'Error al importar PDF')
+
+      const pages = data.pages || []
+      setPdfProgress({ current: pages.length, total: data.totalPages })
+
+      // Step 2: Grade each extracted page
+      setPdfStage('grading')
+      const graded = []
+      for (let i = 0; i < pages.length; i++) {
+        setPdfProgress({ current: i + 1, total: pages.length })
+        try {
+          // Fetch image and convert to base64
+          const imgRes = await fetch(pages[i].imageUrl)
+          const blob = await imgRes.blob()
+          const compressed = await compressImage(blob)
+
+          const gradeRes = await fetch('/api/grade', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              imageBase64: compressed.base64,
+              mimeType: compressed.mimeType,
+              subject,
+              gradeLevel,
+              rubric,
+              wizardConfig: cfg
+            })
+          })
+          const gradeData = await gradeRes.json()
+          if (gradeData.success) {
+            graded.push(gradeData)
+            // Auto-save
+            await fetch('/api/save-result', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...gradeData,
+                subject,
+                gradeLevel,
+                studentName: studentName || `PDF p.${pages[i].pageNumber}`,
+                studentGroup,
+                ocr_confidence: gradeData.ocr_confidence,
+                wizardConfig: cfg
+              })
+            })
+          }
+        } catch (err) {
+          console.error(`Error grading page ${i + 1}:`, err)
+        }
+        if (i < pages.length - 1) {
+          await new Promise(r => setTimeout(r, 800))
+        }
+      }
+
+      setPdfStage('done')
+      alert(`✅ PDF procesado: ${graded.length} de ${pages.length} páginas corregidas correctamente`)
+      setPdfFile(null)
+      fetchHistory()
+    } catch (e) {
+      setError(e.message || 'Error al procesar PDF')
+      setPdfStage('')
+    }
+  }
+
+  const handlePdfImport = () => runPdfImport(null)
+
+  // Wizard handlers
+  const handleOpenWizard = (action) => {
+    setPendingAction(action)
+    setWizardOpen(true)
+  }
+
+  const handleWizardComplete = (config) => {
+    setWizardConfig(config)
+    setWizardOpen(false)
+    // Resume pending action after wizard closes
+    if (pendingAction === 'bulk') {
+      setTimeout(() => galleryRef.current?.click(), 100)
+    } else if (pendingAction === 'pdf') {
+      // Pass config directly because state may not be updated yet
+      setTimeout(() => runPdfImport(config), 100)
+    }
+    setPendingAction(null)
+  }
+
+  const handleWizardCancel = () => {
+    setWizardOpen(false)
+    setPendingAction(null)
+  }
+
+  const handleClearWizardConfig = () => {
+    setWizardConfig(null)
   }
 
   const handleNextExam = () => {
@@ -452,48 +597,240 @@ export default function App() {
 
                 {/* Image capture */}
                 <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100">
-                  {/* Bulk mode toggle */}
-                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-slate-700">Modo por lotes</span>
-                      <span className="text-xs text-slate-500">(Múltiples exámenes)</span>
-                    </div>
+                  {/* Wizard Config Card */}
+                  <div className="px-4 py-3 bg-gradient-to-r from-purple-50 to-blue-50 border-b border-slate-200">
+                    {wizardConfig ? (
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-base">✨</span>
+                            <span className="text-xs font-bold text-purple-700 uppercase tracking-wide">Asistente activo</span>
+                          </div>
+                          <p className="text-sm font-semibold text-slate-800 truncate">
+                            {wizardConfig.segment === 'oposiciones' ? 'Oposiciones' : 'Academia'}
+                            {' · '}
+                            {wizardConfig.department || 'general'}
+                            {wizardConfig.segment === 'oposiciones' && ` · ${wizardConfig.questionCount}p`}
+                            {wizardConfig.segment === 'academia' && ` · ${wizardConfig.level}`}
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleClearWizardConfig}
+                          className="text-xs text-slate-500 hover:text-red-600 px-2 py-1"
+                          title="Limpiar configuración"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleOpenWizard('single')}
+                        className="w-full flex items-center justify-between gap-2 text-left"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">⚙️</span>
+                          <div>
+                            <p className="text-sm font-bold text-slate-800">Configurar examen</p>
+                            <p className="text-xs text-slate-600">Pulsa para abrir el asistente (Oposiciones / Academia)</p>
+                          </div>
+                        </div>
+                        <span className="text-blue-600 text-sm font-semibold">Abrir →</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Input Mode Tabs: Cámara | Galería | PDF */}
+                  <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex gap-1">
                     <button
-                      onClick={() => setBulkMode(!bulkMode)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        bulkMode ? 'bg-blue-600' : 'bg-slate-300'
+                      onClick={() => setInputMode('camera')}
+                      className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                        inputMode === 'camera' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white'
                       }`}
                     >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        bulkMode ? 'translate-x-6' : 'translate-x-1'
-                      }`} />
+                      📷 Cámara
+                    </button>
+                    <button
+                      onClick={() => setInputMode('gallery')}
+                      className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                        inputMode === 'gallery' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white'
+                      }`}
+                    >
+                      🖼 Galería
+                    </button>
+                    <button
+                      onClick={() => setInputMode('pdf')}
+                      className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                        inputMode === 'pdf' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white'
+                      }`}
+                    >
+                      📄 PDF
                     </button>
                   </div>
-                  
-                  <button
-                    onClick={() => cameraRef.current?.click()}
-                    disabled={bulkMode}
-                    className="w-full bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-7 flex flex-col items-center gap-3 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">
-                      <span className="text-4xl">📷</span>
+
+                  {/* Bulk mode toggle (only for camera/gallery, not PDF) */}
+                  {inputMode !== 'pdf' && (
+                    <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-700">Modo por lotes</span>
+                        <span className="text-xs text-slate-500">(Múltiples exámenes)</span>
+                      </div>
+                      <button
+                        onClick={() => setBulkMode(!bulkMode)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          bulkMode ? 'bg-blue-600' : 'bg-slate-300'
+                        }`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          bulkMode ? 'translate-x-6' : 'translate-x-1'
+                        }`} />
+                      </button>
                     </div>
-                    <div className="text-center">
-                      <p className="text-xl font-bold">Escanear Examen</p>
-                      <p className="text-blue-200 text-sm mt-0.5">
-                        {bulkMode ? 'No disponible en modo por lotes' : 'Usa la cámara para fotografiar el examen'}
-                      </p>
+                  )}
+
+                  {/* CAMERA MODE */}
+                  {inputMode === 'camera' && (
+                    <button
+                      onClick={() => cameraRef.current?.click()}
+                      disabled={bulkMode}
+                      className="w-full bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-7 flex flex-col items-center gap-3 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">
+                        <span className="text-4xl">📷</span>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xl font-bold">Escanear Examen</p>
+                        <p className="text-blue-200 text-sm mt-0.5">
+                          {bulkMode ? 'No disponible en modo por lotes' : 'Usa la cámara para fotografiar el examen'}
+                        </p>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* GALLERY MODE */}
+                  {inputMode === 'gallery' && (
+                    <button
+                      onClick={() => bulkMode ? handleOpenWizard('bulk') : galleryRef.current?.click()}
+                      className="w-full bg-gradient-to-br from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white py-7 flex flex-col items-center gap-3 transition-all active:scale-95"
+                    >
+                      <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">
+                        <span className="text-4xl">🖼</span>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xl font-bold">
+                          {bulkMode ? 'Subir múltiples exámenes' : 'Subir desde galería'}
+                        </p>
+                        <p className="text-emerald-100 text-sm mt-0.5">
+                          {bulkMode ? 'Selecciona varias imágenes a la vez' : 'Selecciona una imagen del examen'}
+                        </p>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* PDF MODE */}
+                  {inputMode === 'pdf' && (
+                    <div className="p-5 space-y-3">
+                      <div className="text-center">
+                        <div className="w-16 h-16 mx-auto mb-3 bg-gradient-to-br from-red-500 to-orange-500 rounded-2xl flex items-center justify-center">
+                          <span className="text-4xl">📄</span>
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-800">Importar PDF del escáner</h3>
+                        <p className="text-xs text-slate-600 mt-1">
+                          Sube un PDF con varios exámenes (cada página se corregirá automáticamente)
+                        </p>
+                      </div>
+
+                      {!pdfFile ? (
+                        <button
+                          onClick={() => pdfRef.current?.click()}
+                          className="w-full py-4 border-2 border-dashed border-slate-300 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all text-slate-600"
+                        >
+                          <div className="flex flex-col items-center gap-2">
+                            <span className="text-3xl">📁</span>
+                            <span className="text-sm font-semibold">Seleccionar PDF</span>
+                            <span className="text-xs text-slate-400">Máximo 50 MB</span>
+                          </div>
+                        </button>
+                      ) : (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <span className="text-2xl">📄</span>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-800 truncate">{pdfFile.name}</p>
+                              <p className="text-xs text-slate-500">{(pdfFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setPdfFile(null)}
+                            className="w-8 h-8 bg-red-500 text-white rounded-full text-sm flex items-center justify-center hover:bg-red-600 flex-shrink-0"
+                          >×</button>
+                        </div>
+                      )}
+
+                      {pdfFile && pdfStage === '' && (
+                        <button
+                          onClick={() => wizardConfig ? handlePdfImport() : handleOpenWizard('pdf')}
+                          className="w-full py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold hover:from-purple-700 hover:to-blue-700 active:scale-95 transition-all shadow-md"
+                        >
+                          {wizardConfig ? '✨ Procesar PDF' : '⚙️ Configurar y Procesar'}
+                        </button>
+                      )}
+
+                      {/* PDF Progress */}
+                      {pdfStage === 'extracting' && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="inline-block w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                            <span className="text-sm font-semibold text-blue-900">Extrayendo páginas...</span>
+                          </div>
+                          <p className="text-xs text-blue-700">Convirtiendo PDF a imágenes (300 DPI)</p>
+                        </div>
+                      )}
+
+                      {pdfStage === 'grading' && (
+                        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-semibold text-purple-900">Corrigiendo páginas...</span>
+                            <span className="text-sm font-bold text-purple-700">
+                              {pdfProgress.current} / {pdfProgress.total}
+                            </span>
+                          </div>
+                          <div className="w-full bg-purple-200 rounded-full h-2 overflow-hidden">
+                            <div
+                              className="bg-purple-600 h-full transition-all duration-300"
+                              style={{ width: `${pdfProgress.total > 0 ? (pdfProgress.current / pdfProgress.total) * 100 : 0}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-purple-700 mt-2">Cada página se está corrigiendo con IA. Por favor espera...</p>
+                        </div>
+                      )}
+
+                      {pdfStage === 'done' && (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+                          <span className="text-3xl">✅</span>
+                          <p className="text-sm font-bold text-emerald-900 mt-1">PDF procesado correctamente</p>
+                          <button
+                            onClick={() => { setPdfStage(''); setScreen('history') }}
+                            className="text-xs text-blue-600 font-semibold mt-2 hover:underline"
+                          >
+                            Ver resultados en el historial →
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </button>
-                  <button
-                    onClick={() => galleryRef.current?.click()}
-                    className="w-full py-3.5 flex items-center justify-center gap-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors border-t border-slate-100"
-                  >
-                    <span className="text-xl">🖼</span>
-                    <span className="text-sm font-medium">
-                      {bulkMode ? 'Seleccionar múltiples exámenes' : 'Subir desde galería / archivo'}
-                    </span>
-                  </button>
+                  )}
+
+                  {/* Secondary action - only on camera/gallery */}
+                  {inputMode === 'camera' && (
+                    <button
+                      onClick={() => galleryRef.current?.click()}
+                      className="w-full py-3.5 flex items-center justify-center gap-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors border-t border-slate-100"
+                    >
+                      <span className="text-xl">🖼</span>
+                      <span className="text-sm font-medium">
+                        {bulkMode ? 'Seleccionar múltiples exámenes' : 'Subir desde galería / archivo'}
+                      </span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Bulk processing progress */}
@@ -519,6 +856,7 @@ export default function App() {
 
                 <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileInput} />
                 <input ref={galleryRef} type="file" accept="image/*" multiple={bulkMode} className="hidden" onChange={handleFileInput} />
+                <input ref={pdfRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={handlePdfFileSelected} />
 
                 {/* Image preview */}
                 {imageData && (
@@ -646,12 +984,28 @@ export default function App() {
                       <div className={`h-3 rounded-full bar-fill ${colors.bar}`} style={{ width: `${pct}%` }} />
                     </div>
                     <p className="text-slate-400 text-xs mt-2">{pct}% de la puntuación máxima</p>
-                    {results.timeTaken && (
-                      <div className="mt-4 inline-flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-full">
-                        <span className="text-blue-500">⚡</span>
-                        <span className="text-blue-700 text-sm font-medium">Corregido en {results.timeTaken}s</span>
-                      </div>
-                    )}
+                    <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                      {results.timeTaken && (
+                        <div className="inline-flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-full">
+                          <span className="text-blue-500">⚡</span>
+                          <span className="text-blue-700 text-sm font-medium">Corregido en {results.timeTaken}s</span>
+                        </div>
+                      )}
+                      {(() => {
+                        const conf = results.ocr_confidence ?? results.ocrConfidence
+                        if (conf === null || conf === undefined) return null
+                        const confPct = (parseFloat(conf) * 100).toFixed(1)
+                        const confColor = parseFloat(confPct) >= 99 ? 'bg-emerald-50 text-emerald-700' :
+                                          parseFloat(confPct) >= 95 ? 'bg-amber-50 text-amber-700' :
+                                          'bg-red-50 text-red-700'
+                        return (
+                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${confColor}`}>
+                            <span>🎯</span>
+                            <span className="text-sm font-medium">Precisión: {confPct}%</span>
+                          </div>
+                        )
+                      })()}
+                    </div>
                   </div>
 
                   {/* Question breakdown */}
@@ -860,6 +1214,14 @@ export default function App() {
 
       {/* Print document (hidden, only for PDF export) */}
       <PrintDocument results={results} />
+
+      {/* Exam Configuration Wizard Modal (Feature #1) */}
+      {wizardOpen && (
+        <ExamConfigWizard
+          onComplete={handleWizardComplete}
+          onCancel={handleWizardCancel}
+        />
+      )}
     </>
   )
 }

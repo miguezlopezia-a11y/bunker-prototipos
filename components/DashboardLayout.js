@@ -14,7 +14,8 @@ import {
   School,
   LogOut,
   Shield,
-  BookOpen
+  BookOpen,
+  Target
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -38,6 +39,9 @@ export default function DashboardLayout({ children }) {
   // Get session timeout from settings (default 30 minutes)
   const [sessionTimeout, setSessionTimeout] = React.useState(30)
   
+  // Precision badge (current month average)
+  const [precisionBadge, setPrecisionBadge] = React.useState(null)
+
   React.useEffect(() => {
     const settings = localStorage.getItem('userSettings')
     if (settings) {
@@ -45,6 +49,23 @@ export default function DashboardLayout({ children }) {
       setSessionTimeout(parsed.sessionTimeout || 30)
     }
   }, [])
+
+  React.useEffect(() => {
+    let cancelled = false
+    fetch('/api/precision-stats')
+      .then(r => r.json())
+      .then(d => {
+        if (cancelled) return
+        if (d.success && d.currentMonthAvg !== null) {
+          setPrecisionBadge({
+            pct: (d.currentMonthAvg * 100).toFixed(1),
+            count: d.currentMonthCount
+          })
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [pathname])
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -56,11 +77,29 @@ export default function DashboardLayout({ children }) {
           {/* Logo */}
           <div className="flex items-center gap-2 px-6 py-4 border-b border-slate-200">
             <GraduationCap className="w-8 h-8 text-blue-600" />
-            <div>
+            <div className="flex-1 min-w-0">
               <h1 className="text-lg font-bold text-slate-900">Corrector IA</h1>
-              {school && <p className="text-xs text-slate-500">{school.name}</p>}
+              {school && <p className="text-xs text-slate-500 truncate">{school.name}</p>}
             </div>
           </div>
+
+          {/* Precision Badge (current month) */}
+          {precisionBadge && (
+            <div className={`mx-3 mt-3 mb-1 px-3 py-2 rounded-lg flex items-center gap-2 border ${
+              parseFloat(precisionBadge.pct) >= 99
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : parseFloat(precisionBadge.pct) >= 95
+                ? 'bg-amber-50 border-amber-200 text-amber-800'
+                : 'bg-red-50 border-red-200 text-red-800'
+            }`}>
+              <Target className="w-4 h-4 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium leading-tight">Precisión OCR</p>
+                <p className="text-sm font-bold leading-tight">{precisionBadge.pct}%</p>
+              </div>
+              <span className="text-xs opacity-75">mes</span>
+            </div>
+          )}
 
           {/* Navigation */}
           <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">

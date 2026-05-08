@@ -36,11 +36,19 @@ export async function GET(request) {
       ? Math.round((results.reduce((s, r) => s + r.grade, 0) / results.length) * 10) / 10
       : 0
 
+    // Average OCR confidence (precision metric / 1 - CER)
+    const withConfidence = results.filter(r => r.ocrConfidence !== null && r.ocrConfidence !== undefined)
+    const avgConfidence = withConfidence.length > 0
+      ? Math.round((withConfidence.reduce((s, r) => s + r.ocrConfidence, 0) / withConfidence.length) * 10000) / 10000
+      : null
+
     return handleCORS(NextResponse.json({
       success: true,
       results,
       total:    results.length,
-      avgGrade
+      avgGrade,
+      avgConfidence,
+      precisionExamCount: withConfidence.length
     }))
   } catch (error) {
     console.error('GET /api/results error:', error)
