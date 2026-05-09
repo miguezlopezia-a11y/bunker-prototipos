@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
-import { BarChart3, TrendingUp, Users, FileText, Calendar, Target, Activity } from 'lucide-react'
+import { BarChart3, TrendingUp, Users, FileText, Calendar, Target, Activity, AlertTriangle, AlertCircle } from 'lucide-react'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from 'recharts'
 
 export default function StatsPage() {
@@ -24,9 +24,14 @@ export default function StatsPage() {
   })
   const [loadingPrecision, setLoadingPrecision] = useState(true)
 
+  // Consumption (Feature 1: Hybrid Pricing)
+  const [consumption, setConsumption] = useState(null)
+  const [loadingConsumption, setLoadingConsumption] = useState(true)
+
   useEffect(() => {
     loadStats()
     loadPrecision()
+    loadConsumption()
   }, [])
 
   async function loadStats() {
@@ -73,6 +78,19 @@ export default function StatsPage() {
       console.error('Error loading precision stats:', e)
     } finally {
       setLoadingPrecision(false)
+    }
+  }
+
+  async function loadConsumption() {
+    setLoadingConsumption(true)
+    try {
+      const res = await fetch('/api/consumption')
+      const data = await res.json()
+      if (data.success) setConsumption(data)
+    } catch (e) {
+      console.error('Error loading consumption:', e)
+    } finally {
+      setLoadingConsumption(false)
     }
   }
 
@@ -157,6 +175,85 @@ export default function StatsPage() {
             </p>
           </div>
         </div>
+
+        {/* QUOTA / CONSUMPTION CARD (Feature 1: Hybrid Pricing) */}
+        {!loadingConsumption && consumption && (
+          <div className={`rounded-xl shadow-sm border-2 p-6 mb-8 ${
+            consumption.alertLevel === 'critical' ? 'bg-red-50 border-red-300' :
+            consumption.alertLevel === 'warning' ? 'bg-amber-50 border-amber-300' :
+            'bg-white border-slate-200'
+          }`}>
+            <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-blue-600" />
+                  Consumo del mes (Plan {consumption.planName})
+                </h2>
+                <p className="text-sm text-slate-600 mt-1">
+                  Páginas este mes: <strong>{consumption.pagesUsed.toLocaleString('es-ES')}</strong> / {consumption.quota.toLocaleString('es-ES')} incluidas
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-3xl font-bold text-slate-900">{consumption.percentage.toFixed(1)}%</p>
+                <p className="text-xs text-slate-500">de la cuota mensual</p>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="w-full bg-slate-200 rounded-full h-4 overflow-hidden mb-2">
+              <div
+                className={`h-full transition-all duration-500 ${
+                  consumption.percentage >= 95 ? 'bg-red-500' :
+                  consumption.percentage >= 80 ? 'bg-amber-500' :
+                  'bg-emerald-500'
+                }`}
+                style={{ width: `${Math.min(100, consumption.percentage)}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-xs text-slate-500">
+              <span>0</span>
+              <span className="text-amber-600 font-medium">80% ({Math.round(consumption.quota * 0.8).toLocaleString('es-ES')})</span>
+              <span className="text-red-600 font-medium">95% ({Math.round(consumption.quota * 0.95).toLocaleString('es-ES')})</span>
+              <span>{consumption.quota.toLocaleString('es-ES')}</span>
+            </div>
+
+            {/* Alerts */}
+            {consumption.alertLevel === 'warning' && (
+              <div className="mt-4 flex items-start gap-2 bg-white border border-amber-300 rounded-lg p-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-semibold text-amber-900">Atención: has superado el 80% de tu cuota mensual</p>
+                  <p className="text-amber-700 mt-1">
+                    Te quedan <strong>{consumption.remaining.toLocaleString('es-ES')}</strong> páginas. Considera ampliar tu plan para evitar cargos por sobreuso.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {consumption.alertLevel === 'critical' && (
+              <div className="mt-4 flex items-start gap-2 bg-white border border-red-300 rounded-lg p-3">
+                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-semibold text-red-900">¡Crítico! Has superado el 95% de tu cuota</p>
+                  <p className="text-red-700 mt-1">
+                    Solo te quedan <strong>{consumption.remaining.toLocaleString('es-ES')}</strong> páginas. Las páginas adicionales se facturarán a 0,08 €/página.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {consumption.overagePages > 0 && (
+              <div className="mt-4 p-3 bg-orange-100 border border-orange-300 rounded-lg">
+                <p className="text-sm font-semibold text-orange-900">
+                  ⚠️ Sobreuso del mes: {consumption.overagePages.toLocaleString('es-ES')} páginas × 0,08 € = <strong>{consumption.overageCost.toFixed(2).replace('.', ',')} €</strong>
+                </p>
+                <p className="text-xs text-orange-700 mt-1">
+                  Se sumarán a tu próxima factura mensual.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* PRECISION CHART (CER) */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">

@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
-import { FileText, Filter, Download, Trash2 } from 'lucide-react'
+import CorrectionsHistory from '@/components/CorrectionsHistory'
+import { FileText, Filter, Download, Trash2, Shield } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 export default function HistoryPage() {
@@ -14,6 +15,7 @@ export default function HistoryPage() {
     studentName: ''
   })
   const [loading, setLoading] = useState(false)
+  const [auditOpen, setAuditOpen] = useState(null) // { id, questions } | null
 
   useEffect(() => {
     loadResults()
@@ -171,9 +173,19 @@ export default function HistoryPage() {
                   </td>
                   <td className="px-6 py-4 text-slate-600 text-sm">{formatDate(result.createdAt)}</td>
                   <td className="px-6 py-4">
-                    <button className="text-red-600 hover:text-red-700">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setAuditOpen({ id: result.id, questions: result.questions || [] })}
+                        className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded font-medium"
+                        title="Ver auditoría de correcciones"
+                      >
+                        <Shield className="w-3.5 h-3.5" />
+                        Auditoría
+                      </button>
+                      <button className="text-red-600 hover:text-red-700" title="Eliminar">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -188,6 +200,15 @@ export default function HistoryPage() {
           )}
         </div>
       </div>
+
+      {/* Corrections History Modal (Feature 2: ANECA Audit Trail) */}
+      {auditOpen && (
+        <CorrectionsHistory
+          examResultId={auditOpen.id}
+          examQuestions={auditOpen.questions}
+          onClose={() => setAuditOpen(null)}
+        />
+      )}
     </DashboardLayout>
   )
 }
