@@ -255,7 +255,50 @@ backend:
         agent: "testing"
         comment: "✅ TESTED & WORKING. GET /api/precision-stats - Returns HTTP 200, success:true. Response structure verified: currentMonthAvg:0.987, currentMonthCount:3, globalAvg:0.987, target:0.99. Monthly array has exactly 12 entries (Jun 2025 to May 2026). Each entry contains all required fields: month (Spanish abbreviation), monthKey (YYYY-MM), avgConfidence (0-1 or null), precision (percentage or null), examCount (integer). First month (Jun 2025): avg:null, count:0. Last month (May 2026): avg:0.987, count:3. Correctly handles months with no data (returns null)."
 
-  - task: "POST /api/import-pdf - PDF multi-page import (Feature #2)"
+  - task: "GET/POST /api/consumption - Hybrid pricing usage tracking (Session 5 Feature 1)"
+    implemented: true
+    working: true
+    file: "app/api/consumption/route.js + lib/pricing.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW endpoint. GET returns current month consumption (pagesUsed, quota, percentage, alertLevel, overagePages, overageCost, planName/planPrice). When no schoolId param, falls back to global aggregate via exam_results count. POST upserts pages_processed for school+period. Pricing tiers: Básico 500p/49€, Profesional 5000p/199€, Institucional 50000p/799€, overage 0,08€/page. Alerts at 80% (warning) and 95% (critical). Uses table monthly_consumption (just created via SUPABASE_SESSION_5.sql). Test: 1) GET /api/consumption - HTTP 200, success:true, response has pagesUsed/quota/percentage/alertLevel/overageCost/planName fields. 2) POST /api/consumption with body {schoolId:null,pages:5,planTier:'basico'} - should return success:true skipped:true since no schoolId. 3) POST /api/consumption with body without schoolId - same skip behavior."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED & WORKING (3/3 tests passed). Test A1: GET /api/consumption (no params) - Returns HTTP 200, success:true, all required fields present (pagesUsed:4, quota:500, percentage:0.8, remaining:496, overagePages:0, overageCost:0, planName:'Básico', planPrice:49, planTier:'basico', alertLevel:null, period:{year:2026,month:5}). Default plan values correct. Test A2: POST /api/consumption with empty body {} - Returns HTTP 200, success:true, skipped:true, reason:'no schoolId' (correctly skips when no schoolId provided). Test A3: POST /api/consumption with body {pages:5, planTier:'profesional'} - Returns HTTP 200, success:true, skipped:true, reason:'no schoolId' (correctly skips). Hybrid pricing usage tracking working correctly with real Supabase monthly_consumption table."
+
+  - task: "GET/POST /api/corrections - ANECA audit trail (Session 5 Feature 2)"
+    implemented: true
+    working: true
+    file: "app/api/corrections/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW endpoint. GET ?examResultId=xxx returns array of corrections (sorted by corrected_at DESC). POST creates new correction (manual or AI-logged) with correction_type (ERROR_REPAIR/EDITORIAL_NORMALIZATION/FORMATTING_STANDARDIZATION/AMBIGUITY_RESOLUTION) and correction_source (AI_MODEL/HUMAN_TEACHER/RULE_AUTOMATIC). Validates types and clamps confidence_score 0..1. Writes to audit_log on every POST. Uses table text_corrections (just created via SUPABASE_SESSION_5.sql). Test: 1) GET /api/corrections without examResultId - HTTP 400 'examResultId requerido'. 2) GET /api/corrections?examResultId=<some-uuid> - HTTP 200, success:true, total:N, corrections:[]. 3) POST /api/corrections with body {examResultId:<existing exam id>, questionIndex:0, originalText:'2+2=5', correctedText:'2+2=4', correctionType:'ERROR_REPAIR', correctionSource:'HUMAN_TEACHER', notes:'cálculo erróneo'} - HTTP 200, success:true, id UUID returned. 4) POST without required fields - HTTP 400 with Spanish error. 5) POST with invalid correctionType - HTTP 400."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED & WORKING (5/5 tests passed). Test B1: GET /api/corrections (no params) - Returns HTTP 400, success:false, error:'examResultId requerido' (correct Spanish validation). Test B4: POST /api/corrections with manual correction {examResultId, questionIndex:0, originalText:'respuesta inicial', correctedText:'respuesta revisada', correctionType:'EDITORIAL_NORMALIZATION', correctionSource:'HUMAN_TEACHER', notes:'Corrección manual del profesor', confidenceScore:1.0} - Returns HTTP 200, success:true, id (UUID), all fields populated correctly. Test B5: GET /api/corrections?examResultId=<id> - Returns HTTP 200, total:3 (2 AI + 1 manual), manual correction appears FIRST (sorted by corrected_at DESC), correct breakdown verified. Test B6: POST /api/corrections with invalid correctionType:'INVALID_TYPE' - Returns HTTP 400, success:false, Spanish error mentioning correctionType validation. Test B7: POST /api/corrections with missing required fields {questionIndex:0} - Returns HTTP 400, success:false, Spanish error 'examResultId, questionIndex y originalText son obligatorios'. ANECA audit trail working correctly with real Supabase text_corrections table."
+
+  - task: "POST /api/save-result - Auto-logs AI corrections to text_corrections (Session 5)"
+    implemented: true
+    working: true
+    file: "app/api/save-result/route.js"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Updated /api/save-result to ALSO insert one row into text_corrections per question (correction_source='AI_MODEL', correction_type='ERROR_REPAIR', confidence_score=ocr_confidence, notes=q.feedback). Insertion is wrapped in try/catch so save-result still succeeds even if text_corrections doesn't exist. Test: 1) POST /api/save-result with questions:[{number:1,studentAnswer:'2',correctAnswer:'2',pointsAwarded:1,maxPoints:1,feedback:'Correcto'}, {number:2,studentAnswer:'5',correctAnswer:'4',pointsAwarded:0,maxPoints:1,feedback:'Error'}] + ocr_confidence:0.95 - response success:true with id. 2) Then GET /api/corrections?examResultId=<that id> - should return 2 corrections both with correction_source='AI_MODEL', confidence_score~0.95."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED & WORKING - CRITICAL INTEGRATION TEST PASSED (2/2 tests). Test B2: POST /api/save-result with test data {grade:7.5, maxGrade:10, subject:'Matemáticas', gradeLevel:'ESO', studentName:'Test ANECA', studentGroup:'Test', gradeLabel:'Notable', questions:[{number:1,studentAnswer:'2',correctAnswer:'2',pointsAwarded:1,maxPoints:1,feedback:'Correcto'}, {number:2,studentAnswer:'5',correctAnswer:'4',pointsAwarded:0,maxPoints:1,feedback:'Cálculo erróneo'}], timeTaken:2.5, ocr_confidence:0.95} - Returns HTTP 200, success:true, UUID returned (a141eb16-a56b-4136-9ff0-c10dbc12be9e). Test B3 (CRITICAL): GET /api/corrections?examResultId=<id from B2> - Returns HTTP 200, success:true, total:2 (exactly 2 corrections auto-logged as expected). Both corrections verified: correctionSource:'AI_MODEL', correctionType:'ERROR_REPAIR', confidenceScore:0.95, originalText matches studentAnswer, correctedText matches correctAnswer, notes matches feedback. AUTO-LOGGING INTEGRATION WORKING CORRECTLY - save-result successfully writes to both exam_results AND text_corrections tables for ANECA audit trail compliance."
     implemented: true
     working: true
     file: "app/api/import-pdf/route.js"
@@ -421,7 +464,7 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 5
+  test_sequence: 6
   run_ui: false
 
 test_plan:
@@ -455,4 +498,9 @@ agent_communication:
     message: "🔍 RE-TEST AFTER react-is FIX (Round 3 features). CRITICAL NEW ISSUE FOUND: React HYDRATION ERROR preventing event handlers from working. Test results: 1) ✅ Tab Switcher (Cámara/Galería/PDF) WORKS - all 3 tabs switch content correctly. 2) ❌ Bulk Mode Toggle BROKEN - toggle UI renders but clicking does NOT disable camera button or update state. 3) ❌ Bottom Navigation BROKEN - clicking Historial button does NOT navigate to history screen. 4) ❌ Wizard Modal BROKEN - modal opens successfully showing Oposiciones/Academia buttons, but clicking them does NOT advance to Step 2. Buttons are not responding to clicks. 5) ✅ Dashboard Stats Page WORKS PERFECTLY - all 4 KPI cards present (Total Exámenes, Nota Media, Estudiantes, Precisión Global), precision chart 'Precisión de Lectura OCR (CER)' visible with green line and red 99% target line. ROOT CAUSE: Console shows React hydration error 'Warning: An error occurred during hydration. The server HTML was replaced with client content'. This is caused by the <style> tag in page.js (lines 516-532) where server renders HTML entities (&gt;) but client renders actual characters (>). This mismatch causes React to replace the entire DOM during hydration, breaking all event listeners. URGENT FIX NEEDED: Move inline styles to globals.css or use dangerouslySetInnerHTML to prevent hydration mismatch. Until fixed, 3 of 5 Round 3 features remain broken (Wizard, Bulk Toggle, Bottom Nav)."
   - agent: "testing"
     message: "🎉 ROUND 3 RE-TEST AFTER HYDRATION FIX - MAJOR PROGRESS! Main agent successfully fixed hydration error by moving inline styles from page.js to globals.css. Test results: 1) ✅ NO HYDRATION ERRORS - Console is clean, no React hydration warnings detected. THE FIX WORKED! 2) ✅ Tab Switcher (Cámara/Galería/PDF) - All 3 tabs work perfectly, content switches correctly. 3) ✅ Bulk Mode Toggle - Toggle switch works! Camera button disables when bulk mode is ON, re-enables when OFF. 4) ✅ Bottom Navigation - Works perfectly! Clicking 'Historial' navigates to history screen, 'Nuevo examen' returns to scan screen. 5) ✅ Dashboard Stats Page - Loads successfully with precision chart and KPI cards visible. 6) ⚠️ Wizard Modal - PARTIALLY WORKING with new bug discovered: Modal opens ✅, advances from Step 1 to Step 2 after clicking 'Oposiciones' ✅, department buttons are clickable ✅, BUT clicking 'Siguiente' button on Step 2 resets wizard back to Step 1 instead of advancing to Step 3 ❌. This is a logic bug in the wizard component (ExamConfigWizard.js), NOT a hydration issue. Event handlers are now working correctly. SUMMARY: Hydration fix was successful! 5 out of 6 features now working. Wizard has a separate logic bug in step advancement that needs fixing."
+  - agent: "main"
+    message: "SESSION 5 — Implemented 3 new backend features for Hybrid Pricing + ANECA Audit Trail. User has executed /app/SUPABASE_SESSION_5.sql in their REAL Supabase project, so monthly_consumption and text_corrections tables exist. Real Supabase credentials are in /app/.env. Tests requested: A) /api/consumption - A1) GET /api/consumption (no params) - expect 200 with pagesUsed/quota/percentage/remaining/overagePages/overageCost/planName/planPrice/planTier/alertLevel/period. A2) POST /api/consumption with body {} - expect 200, skipped:true, reason:'no schoolId'. A3) POST /api/consumption with body {pages:5, planTier:'profesional'} - expect skipped (no schoolId). B) /api/corrections - B1) GET /api/corrections (no params) - expect 400 'examResultId requerido'. B2) POST /api/save-result with test data - save the id. B3) GET /api/corrections?examResultId=<id from B2> - expect 200, total:2 (auto-logged AI corrections), verify correctionSource:'AI_MODEL'. B4) POST /api/corrections with manual correction - expect 200, id returned. B5) GET /api/corrections?examResultId=<id from B2> - expect 200, total:3 (2 AI + 1 manual), manual one first (sorted DESC). B6) POST /api/corrections with invalid correctionType - expect 400. B7) POST /api/corrections with missing required fields - expect 400."
+  - agent: "testing"
+    message: "🎉 ALL SESSION 5 BACKEND TESTS PASSED (10/10). Feature 1 (Hybrid Pricing): GET /api/consumption returns HTTP 200 with all required fields (pagesUsed:4, quota:500, percentage:0.8, remaining:496, overagePages:0, overageCost:0, planName:'Básico', planPrice:49, planTier:'basico', alertLevel:null, period:{year:2026,month:5}). POST /api/consumption correctly skips when no schoolId provided (success:true, skipped:true, reason:'no schoolId'). Feature 2 (ANECA Audit Trail): GET /api/corrections validates examResultId param (HTTP 400 'examResultId requerido'). POST /api/corrections creates manual corrections with all fields (correctionSource:'HUMAN_TEACHER', correctionType:'EDITORIAL_NORMALIZATION', confidenceScore:1.0). GET /api/corrections returns corrections sorted by corrected_at DESC (manual correction appears first). Validation working correctly (HTTP 400 for invalid correctionType and missing required fields). Feature 3 (Auto-logging) - CRITICAL INTEGRATION TEST PASSED: POST /api/save-result with 2 questions auto-logs 2 AI corrections to text_corrections table. GET /api/corrections?examResultId=<id> returns exactly 2 corrections with correctionSource:'AI_MODEL', correctionType:'ERROR_REPAIR', confidenceScore:0.95, originalText/correctedText/notes matching question data. All 3 Session 5 features working correctly with real Supabase tables (monthly_consumption, text_corrections). Backend is fully functional. Ready for main agent to summarize and finish."
+
 
