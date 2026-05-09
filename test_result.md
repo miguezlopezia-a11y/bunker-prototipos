@@ -197,63 +197,78 @@ backend:
 
   - task: "POST /api/grade - Wizard config support (Feature #1)"
     implemented: true
-    working: "NA"
+    working: true
     file: "app/api/grade/route.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Updated /api/grade to optionally accept `wizardConfig` JSON. If wizardConfig.segment is 'oposiciones' or 'academia', uses the dynamic Spanish prompt from /lib/promptBuilder.js (Oposiciones: tipo test with penalties; Academia: subject/level/examType-specific). Otherwise uses the legacy default Spanish prompt. ALL prompts now request `ocr_confidence` (0..1) in JSON output for Feature #3 (CER). Sanitises ocr_confidence before returning. Audit log includes wizardSegment + ocrConfidence. Test cases: 1) POST /api/grade WITHOUT wizardConfig - should still work (legacy path) and return ocr_confidence in response. 2) POST /api/grade WITH wizardConfig={segment:'oposiciones',department:'sanidad',questionCount:100,penalty:-0.25} - should use Oposiciones prompt and return ocr_confidence. 3) POST /api/grade WITH wizardConfig={segment:'academia',department:'matematicas',level:'ESO',examType:'mixto'} - should use Academia prompt and return ocr_confidence."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED & WORKING (3/3 test cases passed). Test 1: POST /api/grade WITHOUT wizardConfig (legacy path) - Returns HTTP 200, success:true, grade:1, ocr_confidence:1 (valid 0-1 range), questions array present, timeTaken:1.7s. Test 2: POST /api/grade WITH Oposiciones wizardConfig (segment:oposiciones, department:sanidad, questionCount:100, penalty:-0.25) - Returns HTTP 200, ocr_confidence:1, Oposiciones-style fields detected (correctas/incorrectas). Test 3: POST /api/grade WITH Academia wizardConfig (segment:academia, department:matematicas, level:ESO, examType:mixto, includeMathSteps:true) - Returns HTTP 200, ocr_confidence:1. All three paths working correctly with GPT-4o Vision. Wizard config integration successful."
 
   - task: "POST /api/save-result - Persists ocr_confidence + wizard_config (Feature #3)"
     implemented: true
-    working: "NA"
+    working: true
     file: "app/api/save-result/route.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Updated to accept and persist `ocr_confidence` (DECIMAL 0..1) and `wizardConfig` (JSONB) into exam_results table. Sanitises ocr_confidence to clamp between 0 and 1. Requires DB migration: SUPABASE_COMBINED_FEATURES.sql adds ocr_confidence + wizard_config columns to exam_results. NOTE: Will fail if SQL migration not yet executed. Test: POST /api/save-result with body containing grade, subject, gradeLevel, ocr_confidence:0.987, wizardConfig:{segment:'oposiciones'}."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED & WORKING. POST /api/save-result with ocr_confidence:0.987 and wizardConfig:{segment:'oposiciones',department:'sanidad'} - Returns HTTP 200, success:true, UUID returned (56cfd6ca-dd29-42fc-a931-9d63a78bc63a). Schema successfully applied - ocr_confidence and wizard_config columns exist in exam_results table. Data persists correctly with all fields including studentName:'Test Alumno', studentGroup:'3ESO-A', gradeLabel:'Notable'."
 
   - task: "GET /api/results - Returns ocrConfidence + avgConfidence (Feature #3)"
     implemented: true
-    working: "NA"
+    working: true
     file: "app/api/results/route.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Updated transformResult() in /lib/transforms.js to expose `ocrConfidence` and `wizardConfig` fields. /api/results response now includes `avgConfidence` (lifetime average from filtered results) and `precisionExamCount` (how many results have non-null confidence). Test: GET /api/results - response should contain avgConfidence and each result should have ocrConfidence field."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED & WORKING. GET /api/results - Returns HTTP 200, success:true, total:3, avgGrade:8.5. NEW FIELDS VERIFIED: avgConfidence:0.987 (lifetime average of OCR confidence), precisionExamCount:3 (count of results with non-null confidence). Each result item includes ocrConfidence field (value:0.987). Transform function correctly exposes ocr_confidence from DB as ocrConfidence in camelCase format."
 
   - task: "GET /api/precision-stats - Monthly OCR precision statistics (Feature #3)"
     implemented: true
-    working: "NA"
+    working: true
     file: "app/api/precision-stats/route.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "NEW endpoint. Returns: { currentMonthAvg, currentMonthCount, globalAvg, monthly: [{month, monthKey, avgConfidence, precision, examCount}], target: 0.99 }. Builds last 12 months data even for months with 0 exams (returns null for those). Used by Dashboard Stats page (precision chart) and DashboardLayout sidebar badge. Test: GET /api/precision-stats - should return success:true with monthly array of 12 entries."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED & WORKING. GET /api/precision-stats - Returns HTTP 200, success:true. Response structure verified: currentMonthAvg:0.987, currentMonthCount:3, globalAvg:0.987, target:0.99. Monthly array has exactly 12 entries (Jun 2025 to May 2026). Each entry contains all required fields: month (Spanish abbreviation), monthKey (YYYY-MM), avgConfidence (0-1 or null), precision (percentage or null), examCount (integer). First month (Jun 2025): avg:null, count:0. Last month (May 2026): avg:0.987, count:3. Correctly handles months with no data (returns null)."
 
   - task: "POST /api/import-pdf - PDF multi-page import (Feature #2)"
     implemented: true
-    working: "NA"
+    working: true
     file: "app/api/import-pdf/route.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Existing endpoint, untouched in this round. Accepts multipart formData (pdf file, wizardConfig JSON, pagesPerExam). Uses pdf2pic + sharp to extract pages at 300 DPI, uploads each to Supabase Storage 'exam-images' bucket, creates exam_documents + exam_document_pages records. Requires SUPABASE_COMBINED_FEATURES.sql executed AND 'exam-images' storage bucket created. Test: smoke test only — verify endpoint returns proper validation error when no PDF file is sent (400 instead of 500). Full PDF flow requires real PDF and storage bucket."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED & WORKING (validation smoke test). POST /api/import-pdf with no PDF file - Returns HTTP 400 (proper validation error, not 500 crash), success:false, Spanish error message: 'No se proporcionó archivo PDF'. Endpoint correctly validates missing PDF file and returns appropriate error response. Full PDF processing flow not tested (requires real PDF file and storage bucket setup), but validation layer is working correctly."
 
 frontend:
   - task: "Screen 1 - Scan & Submit UI"
@@ -295,16 +310,11 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 4
+  test_sequence: 5
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "POST /api/grade - Wizard config support (Feature #1)"
-    - "POST /api/save-result - Persists ocr_confidence + wizard_config (Feature #3)"
-    - "GET /api/results - Returns ocrConfidence + avgConfidence (Feature #3)"
-    - "GET /api/precision-stats - Monthly OCR precision statistics (Feature #3)"
-    - "POST /api/import-pdf - PDF multi-page import (Feature #2)"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -324,4 +334,6 @@ agent_communication:
     message: "✅ SUPABASE MIGRATION FULLY VERIFIED (8/8 tests passed). Code verification: NO MongoDB code anywhere (route.js, package.json clean), @supabase/supabase-js@^2.105.1 installed, all 3 Supabase env vars present, SUPABASE_SETUP.sql contains all 6 tables (schools, teachers, exam_results, rubrics, audit_log, consents). API tests: GET /api/health returns HTTP 200 with database='Supabase PostgreSQL', all DB endpoints (GET /api/results, GET /api/results?subject=Matemáticas, POST /api/save-result) fail gracefully with HTTP 500 + JSON error responses (not crashes). Migration complete. App ready for real Supabase credentials after deployment."
   - agent: "main"
     message: "ROUND 3 — Implemented final feature batch (Wizard + PDF Import UI integration + Precision Metrics CER). Five backend changes need testing. IMPORTANT CONTEXT: (a) Real Supabase credentials are now in .env (not placeholders). (b) The user has been asked to manually run /app/SUPABASE_COMBINED_FEATURES.sql in Supabase SQL Editor before /api/save-result + /api/results + /api/precision-stats DB queries can succeed. If schema not yet applied, those endpoints will return DB error (column does not exist). (c) /api/grade does NOT require DB access — should work regardless. Tests requested: 1) POST /api/grade with REAL exam image and NO wizardConfig — verify 200 response includes ocr_confidence field (legacy path still works). 2) POST /api/grade with wizardConfig={segment:'oposiciones',department:'sanidad',questionCount:100,penalty:-0.25} — verify it succeeds and returns ocr_confidence + Oposiciones-style fields if possible. 3) POST /api/grade with wizardConfig={segment:'academia',department:'matematicas',level:'ESO',examType:'mixto'} — verify success. 4) GET /api/precision-stats — verify success:true and monthly array of 12 entries (will return all-null monthlies if no data; that's OK). 5) POST /api/save-result with ocr_confidence:0.987 + wizardConfig:{segment:'oposiciones'} — if schema applied, expect 200 and id; if schema not applied, expect graceful 500 with error message. 6) GET /api/results — verify response includes avgConfidence and precisionExamCount fields. 7) POST /api/import-pdf with no body — verify 400 validation error (not 500 crash). All tests should be against real Supabase. Don't test full PDF flow (no real PDF needed). Use the existing test exam image. Use the testing image from /app/image_testing.md for grading tests."
+  - agent: "testing"
+    message: "🎉 ALL ROUND 3 BACKEND TESTS PASSED (7/7). Feature #1 (Wizard Config): POST /api/grade works with and without wizardConfig - legacy path returns ocr_confidence:1, Oposiciones config returns ocr_confidence:1 with Oposiciones-style fields, Academia config returns ocr_confidence:1. Feature #3 (Precision Metrics): POST /api/save-result successfully persists ocr_confidence:0.987 and wizardConfig to DB (UUID returned), GET /api/results returns avgConfidence:0.987 and precisionExamCount:3 with each result having ocrConfidence field, GET /api/precision-stats returns 12 monthly entries with correct structure (currentMonthAvg:0.987, globalAvg:0.987, target:0.99). Feature #2 (PDF Import): POST /api/import-pdf validation returns HTTP 400 with Spanish error 'No se proporcionó archivo PDF'. SUPABASE_BOOTSTRAP_COMPLETE.sql schema successfully applied - all new columns (ocr_confidence, wizard_config) exist and working. All 5 tasks marked needs_retesting:true are now WORKING. Backend is fully functional with real Supabase credentials."
 
