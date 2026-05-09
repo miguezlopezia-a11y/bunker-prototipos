@@ -282,6 +282,84 @@ frontend:
       - working: true
         agent: "main"
         comment: "UI renders correctly. Has header, scanner status, camera button, gallery button, subject/level selectors, rubric textarea, submit button. Screenshot confirmed working."
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED. Initial render working correctly. All main elements present: header 'Corrector de Exámenes', student form (name/group inputs), wizard config card with 'Abrir →' button, 3 tabs (Cámara/Galería/PDF), bulk mode toggle, exam info section (subject/level dropdowns), rubric textarea, 'Corregir con IA' submit button, bottom navigation (Nuevo examen/Historial). Minor: Scanner status shows 'Verificando...' instead of 'Escáner conectado' (cosmetic issue)."
+
+  - task: "Exam Config Wizard Modal (Feature #1)"
+    implemented: true
+    working: false
+    file: "app/page.js, components/ExamConfigWizard.js"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Round 3 feature. Wizard modal with 2 segments (Oposiciones/Academia), multi-step flow, config persistence. Opens with 'Abrir →' button on config card."
+      - working: false
+        agent: "testing"
+        comment: "❌ CRITICAL: Wizard modal does NOT open when clicking 'Abrir →' button. Modal title and content never appear. JavaScript error detected: 'Invalid or unexpected token' preventing all interactive features from working. This blocks the entire Feature #1 (Exam Config Wizard). Root cause: JavaScript syntax error or compilation issue preventing React event handlers from executing."
+
+  - task: "Tab Switcher (Cámara/Galería/PDF) - Feature #2"
+    implemented: true
+    working: false
+    file: "app/page.js"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Round 3 feature. Three input modes: Camera (default), Gallery (image upload), PDF (multi-page import). Tab buttons switch between modes."
+      - working: false
+        agent: "testing"
+        comment: "❌ MAJOR: Tab switcher partially broken. Camera and Gallery tabs render correctly, but clicking tabs does NOT change content. PDF tab content (title 'Importar PDF del escáner', 'Seleccionar PDF' button) does NOT appear when PDF tab is clicked. Same JavaScript error ('Invalid or unexpected token') preventing tab switching logic from executing."
+
+  - task: "Bulk Mode Toggle - Feature #2"
+    implemented: true
+    working: false
+    file: "app/page.js"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Round 3 feature. Toggle switch for bulk exam processing. When ON: disables camera button, changes gallery text to 'Seleccionar múltiples exámenes'. Hidden on PDF tab."
+      - working: false
+        agent: "testing"
+        comment: "❌ MAJOR: Bulk mode toggle does NOT work. Clicking toggle switch does not disable camera button or change text. Toggle UI renders correctly but onClick handler not executing. Same JavaScript error blocking all interactivity."
+
+  - task: "Bottom Navigation (Nuevo examen / Historial)"
+    implemented: true
+    working: false
+    file: "app/page.js"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Fixed bottom nav bar with two buttons: 'Nuevo examen' (camera icon) and 'Historial' (chart icon). Switches between scan and history screens."
+      - working: false
+        agent: "testing"
+        comment: "❌ MAJOR: Bottom navigation does NOT work. Clicking 'Historial' button does not navigate to history screen. Clicking 'Nuevo examen' does not navigate back. Navigation UI renders correctly but onClick handlers not executing. Same JavaScript error blocking navigation."
+
+  - task: "Dashboard Stats Page - Precision Metrics (Feature #3)"
+    implemented: true
+    working: false
+    file: "app/dashboard/stats/page.js"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Round 3 feature. Dashboard stats page with 4 KPI cards (Total Exámenes, Nota Media, Estudiantes, Precisión Global), precision chart with OCR confidence data, monthly trend line, 99% target reference line."
+      - working: false
+        agent: "testing"
+        comment: "❌ CRITICAL: Dashboard stats page returns 502 Bad Gateway error. Page fails to compile due to missing dependency: 'react-is' module not found (required by recharts library). Attempted fix: installed react-is@19.2.6 via yarn, but error persists. Dashboard is completely inaccessible. This blocks Feature #3 (Precision Metrics) from being tested."
 
   - task: "Screen 2 - Results display"
     implemented: true
@@ -294,6 +372,9 @@ frontend:
       - working: "NA"
         agent: "main"
         comment: "Results screen implemented with grade circle, progress bar, question breakdown, PDF export (window.print), save button, next exam button. Not yet tested end-to-end."
+      - working: "NA"
+        agent: "testing"
+        comment: "NOT TESTED. Cannot test results screen because submit button ('Corregir con IA') is not clickable due to JavaScript error. Would require fixing the JavaScript error first, then uploading an exam image and submitting for grading."
 
   - task: "Image compression and base64 conversion"
     implemented: true
@@ -306,6 +387,9 @@ frontend:
       - working: "NA"
         agent: "main"
         comment: "Canvas-based image compression to max 1400px, quality 0.85, JPEG format."
+      - working: "NA"
+        agent: "testing"
+        comment: "NOT TESTED. Cannot test image compression because file input handlers are not executing due to JavaScript error."
 
 metadata:
   created_by: "main_agent"
@@ -314,8 +398,18 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus: []
-  stuck_tasks: []
+  current_focus:
+    - "Exam Config Wizard Modal (Feature #1)"
+    - "Tab Switcher (Cámara/Galería/PDF) - Feature #2"
+    - "Bulk Mode Toggle - Feature #2"
+    - "Bottom Navigation (Nuevo examen / Historial)"
+    - "Dashboard Stats Page - Precision Metrics (Feature #3)"
+  stuck_tasks:
+    - "Exam Config Wizard Modal (Feature #1)"
+    - "Tab Switcher (Cámara/Galería/PDF) - Feature #2"
+    - "Bulk Mode Toggle - Feature #2"
+    - "Bottom Navigation (Nuevo examen / Historial)"
+    - "Dashboard Stats Page - Precision Metrics (Feature #3)"
   test_all: false
   test_priority: "high_first"
 
@@ -336,4 +430,6 @@ agent_communication:
     message: "ROUND 3 — Implemented final feature batch (Wizard + PDF Import UI integration + Precision Metrics CER). Five backend changes need testing. IMPORTANT CONTEXT: (a) Real Supabase credentials are now in .env (not placeholders). (b) The user has been asked to manually run /app/SUPABASE_COMBINED_FEATURES.sql in Supabase SQL Editor before /api/save-result + /api/results + /api/precision-stats DB queries can succeed. If schema not yet applied, those endpoints will return DB error (column does not exist). (c) /api/grade does NOT require DB access — should work regardless. Tests requested: 1) POST /api/grade with REAL exam image and NO wizardConfig — verify 200 response includes ocr_confidence field (legacy path still works). 2) POST /api/grade with wizardConfig={segment:'oposiciones',department:'sanidad',questionCount:100,penalty:-0.25} — verify it succeeds and returns ocr_confidence + Oposiciones-style fields if possible. 3) POST /api/grade with wizardConfig={segment:'academia',department:'matematicas',level:'ESO',examType:'mixto'} — verify success. 4) GET /api/precision-stats — verify success:true and monthly array of 12 entries (will return all-null monthlies if no data; that's OK). 5) POST /api/save-result with ocr_confidence:0.987 + wizardConfig:{segment:'oposiciones'} — if schema applied, expect 200 and id; if schema not applied, expect graceful 500 with error message. 6) GET /api/results — verify response includes avgConfidence and precisionExamCount fields. 7) POST /api/import-pdf with no body — verify 400 validation error (not 500 crash). All tests should be against real Supabase. Don't test full PDF flow (no real PDF needed). Use the existing test exam image. Use the testing image from /app/image_testing.md for grading tests."
   - agent: "testing"
     message: "🎉 ALL ROUND 3 BACKEND TESTS PASSED (7/7). Feature #1 (Wizard Config): POST /api/grade works with and without wizardConfig - legacy path returns ocr_confidence:1, Oposiciones config returns ocr_confidence:1 with Oposiciones-style fields, Academia config returns ocr_confidence:1. Feature #3 (Precision Metrics): POST /api/save-result successfully persists ocr_confidence:0.987 and wizardConfig to DB (UUID returned), GET /api/results returns avgConfidence:0.987 and precisionExamCount:3 with each result having ocrConfidence field, GET /api/precision-stats returns 12 monthly entries with correct structure (currentMonthAvg:0.987, globalAvg:0.987, target:0.99). Feature #2 (PDF Import): POST /api/import-pdf validation returns HTTP 400 with Spanish error 'No se proporcionó archivo PDF'. SUPABASE_BOOTSTRAP_COMPLETE.sql schema successfully applied - all new columns (ocr_confidence, wizard_config) exist and working. All 5 tasks marked needs_retesting:true are now WORKING. Backend is fully functional with real Supabase credentials."
+  - agent: "testing"
+    message: "❌ ROUND 3 FRONTEND TESTS FAILED (5/6 major issues). CRITICAL JAVASCRIPT ERROR: 'Invalid or unexpected token' preventing ALL interactive features from working. Test results: 1) ✅ Initial render OK - all UI elements present (header, student form, wizard config card, 3 tabs, bulk toggle, exam info, rubric, submit button, bottom nav). 2) ❌ Wizard modal does NOT open when clicking 'Abrir →' - modal never appears. 3) ❌ Tab switcher does NOT work - clicking tabs doesn't change content, PDF tab content never appears. 4) ❌ Bulk mode toggle does NOT work - toggle doesn't disable camera button or change text. 5) ❌ Bottom navigation does NOT work - clicking Historial/Nuevo examen doesn't navigate. 6) ❌ Dashboard stats page returns 502 Bad Gateway - missing 'react-is' dependency (installed react-is@19.2.6 but error persists). ROOT CAUSE: JavaScript syntax error or compilation issue preventing React event handlers from executing. All Round 3 features (Wizard, Tab Switcher, Bulk Mode, Precision Dashboard) are BLOCKED by this error. URGENT: Main agent must investigate and fix JavaScript error before any frontend features can work."
 
