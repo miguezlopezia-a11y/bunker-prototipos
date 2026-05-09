@@ -303,6 +303,9 @@ frontend:
       - working: false
         agent: "testing"
         comment: "❌ CRITICAL (Re-test after react-is fix): Wizard modal OPENS successfully showing 'Configurar Corrección de Examen' title with both Oposiciones and Academia buttons visible. However, clicking Oposiciones or Academia buttons does NOT advance to Step 2. Buttons are not responding to clicks. ROOT CAUSE: React hydration error - server HTML doesn't match client HTML in <style> tag (lines 516-532 in page.js). Server renders '&gt;' but client renders '>'. This causes React to replace entire DOM during hydration, breaking all event listeners. FIX REQUIRED: Move inline styles to globals.css or use suppressHydrationWarning prop on style tag."
+      - working: false
+        agent: "testing"
+        comment: "⚠️ PARTIALLY WORKING (Re-test after hydration fix): Hydration error FIXED! ✅ Modal opens correctly. ✅ Clicking 'Oposiciones' advances to Step 2 ('Configuración de Oposiciones'). ✅ Department buttons are clickable. ❌ NEW BUG: Clicking 'Siguiente' button on Step 2 resets wizard back to Step 1 instead of advancing to Step 3. This is a logic bug in ExamConfigWizard.js step advancement, NOT a hydration issue. Event handlers are now working. Wizard flow is: Step 1 (select segment) → Step 2 (configure) → [BUG: resets to Step 1 instead of Step 3]. Full Oposiciones and Academia flows cannot complete due to this bug."
 
   - task: "Tab Switcher (Cámara/Galería/PDF) - Feature #2"
     implemented: true
@@ -324,9 +327,9 @@ frontend:
 
   - task: "Bulk Mode Toggle - Feature #2"
     implemented: true
-    working: false
+    working: true
     file: "app/page.js"
-    stuck_count: 2
+    stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
@@ -339,12 +342,15 @@ frontend:
       - working: false
         agent: "testing"
         comment: "❌ MAJOR (Re-test after react-is fix): Bulk mode toggle still BROKEN. Toggle UI renders correctly, but clicking toggle does NOT disable 'Escanear Examen' button or show 'No disponible en modo por lotes' text. State is not updating. ROOT CAUSE: Same React hydration error affecting event handlers. The bulkMode state is not being updated when toggle is clicked."
+      - working: true
+        agent: "testing"
+        comment: "✅ WORKING (Re-test after hydration fix): Bulk mode toggle now works perfectly! Toggle switch responds to clicks. When toggled ON: camera button ('Escanear Examen') is disabled and shows 'No disponible en modo por lotes' text. When toggled OFF: camera button re-enables. State updates correctly. Hydration fix resolved the issue."
 
   - task: "Bottom Navigation (Nuevo examen / Historial)"
     implemented: true
-    working: false
+    working: true
     file: "app/page.js"
-    stuck_count: 2
+    stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
@@ -357,6 +363,9 @@ frontend:
       - working: false
         agent: "testing"
         comment: "❌ MAJOR (Re-test after react-is fix): Bottom navigation still BROKEN. Clicking 'Historial' button does NOT navigate to history screen (header 'Historial de exámenes' never appears). Navigation buttons render correctly but screen state is not changing. ROOT CAUSE: Same React hydration error preventing setScreen() state updates from working."
+      - working: true
+        agent: "testing"
+        comment: "✅ WORKING (Re-test after hydration fix): Bottom navigation now works perfectly! Clicking 'Historial' button navigates to history screen showing 'Historial de exámenes' header with stats and filters. Clicking 'Nuevo examen' button navigates back to scan screen showing 'Corrector de Exámenes' header. Screen state updates correctly. Hydration fix resolved the issue."
 
   - task: "Dashboard Stats Page - Precision Metrics (Feature #3)"
     implemented: true
@@ -447,4 +456,6 @@ agent_communication:
     message: "FIXED react-is dependency issue. Installed react-is@19.2.6, restarted Nextjs server. Page now renders correctly with no compilation errors. Ready for re-testing all Round 3 features."
   - agent: "testing"
     message: "🔍 RE-TEST AFTER react-is FIX (Round 3 features). CRITICAL NEW ISSUE FOUND: React HYDRATION ERROR preventing event handlers from working. Test results: 1) ✅ Tab Switcher (Cámara/Galería/PDF) WORKS - all 3 tabs switch content correctly. 2) ❌ Bulk Mode Toggle BROKEN - toggle UI renders but clicking does NOT disable camera button or update state. 3) ❌ Bottom Navigation BROKEN - clicking Historial button does NOT navigate to history screen. 4) ❌ Wizard Modal BROKEN - modal opens successfully showing Oposiciones/Academia buttons, but clicking them does NOT advance to Step 2. Buttons are not responding to clicks. 5) ✅ Dashboard Stats Page WORKS PERFECTLY - all 4 KPI cards present (Total Exámenes, Nota Media, Estudiantes, Precisión Global), precision chart 'Precisión de Lectura OCR (CER)' visible with green line and red 99% target line. ROOT CAUSE: Console shows React hydration error 'Warning: An error occurred during hydration. The server HTML was replaced with client content'. This is caused by the <style> tag in page.js (lines 516-532) where server renders HTML entities (&gt;) but client renders actual characters (>). This mismatch causes React to replace the entire DOM during hydration, breaking all event listeners. URGENT FIX NEEDED: Move inline styles to globals.css or use dangerouslySetInnerHTML to prevent hydration mismatch. Until fixed, 3 of 5 Round 3 features remain broken (Wizard, Bulk Toggle, Bottom Nav)."
+  - agent: "testing"
+    message: "🎉 ROUND 3 RE-TEST AFTER HYDRATION FIX - MAJOR PROGRESS! Main agent successfully fixed hydration error by moving inline styles from page.js to globals.css. Test results: 1) ✅ NO HYDRATION ERRORS - Console is clean, no React hydration warnings detected. THE FIX WORKED! 2) ✅ Tab Switcher (Cámara/Galería/PDF) - All 3 tabs work perfectly, content switches correctly. 3) ✅ Bulk Mode Toggle - Toggle switch works! Camera button disables when bulk mode is ON, re-enables when OFF. 4) ✅ Bottom Navigation - Works perfectly! Clicking 'Historial' navigates to history screen, 'Nuevo examen' returns to scan screen. 5) ✅ Dashboard Stats Page - Loads successfully with precision chart and KPI cards visible. 6) ⚠️ Wizard Modal - PARTIALLY WORKING with new bug discovered: Modal opens ✅, advances from Step 1 to Step 2 after clicking 'Oposiciones' ✅, department buttons are clickable ✅, BUT clicking 'Siguiente' button on Step 2 resets wizard back to Step 1 instead of advancing to Step 3 ❌. This is a logic bug in the wizard component (ExamConfigWizard.js), NOT a hydration issue. Event handlers are now working correctly. SUMMARY: Hydration fix was successful! 5 out of 6 features now working. Wizard has a separate logic bug in step advancement that needs fixing."
 

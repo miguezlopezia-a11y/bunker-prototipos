@@ -513,24 +513,6 @@ export default function App() {
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <>
-      <style>{`
-        @media print {
-          body > * { display: none !important; }
-          #print-doc { display: block !important; }
-          #print-doc * { visibility: visible; }
-        }
-        .fade-in { animation: fadeIn 0.35s ease; }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-        .bar-fill { transition: width 1.2s cubic-bezier(0.4,0,0.2,1); }
-        .pulse-slow { animation: pulse 2s infinite; }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.45} }
-        .sx { overflow-x:auto; -ms-overflow-style:none; scrollbar-width:none; }
-        .sx::-webkit-scrollbar { display:none; }
-        .pill { display:inline-block; padding:5px 14px; border-radius:999px; font-size:13px; font-weight:500; white-space:nowrap; cursor:pointer; border:none; outline:none; transition:background 0.15s,color 0.15s; }
-        .pill-on { background:#2563eb; color:white; }
-        .pill-off { background:#f1f5f9; color:#64748b; }
-      `}</style>
-
       <div className="min-h-screen bg-gradient-to-br from-slate-100 to-blue-50 flex justify-center" style={{ paddingBottom: screen !== 'results' ? '72px' : '0' }}>
         <div className="w-full max-w-md">
 
