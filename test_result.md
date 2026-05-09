@@ -290,7 +290,7 @@ frontend:
     implemented: true
     working: false
     file: "app/page.js, components/ExamConfigWizard.js"
-    stuck_count: 1
+    stuck_count: 2
     priority: "high"
     needs_retesting: false
     status_history:
@@ -300,12 +300,15 @@ frontend:
       - working: false
         agent: "testing"
         comment: "❌ CRITICAL: Wizard modal does NOT open when clicking 'Abrir →' button. Modal title and content never appear. JavaScript error detected: 'Invalid or unexpected token' preventing all interactive features from working. This blocks the entire Feature #1 (Exam Config Wizard). Root cause: JavaScript syntax error or compilation issue preventing React event handlers from executing."
+      - working: false
+        agent: "testing"
+        comment: "❌ CRITICAL (Re-test after react-is fix): Wizard modal OPENS successfully showing 'Configurar Corrección de Examen' title with both Oposiciones and Academia buttons visible. However, clicking Oposiciones or Academia buttons does NOT advance to Step 2. Buttons are not responding to clicks. ROOT CAUSE: React hydration error - server HTML doesn't match client HTML in <style> tag (lines 516-532 in page.js). Server renders '&gt;' but client renders '>'. This causes React to replace entire DOM during hydration, breaking all event listeners. FIX REQUIRED: Move inline styles to globals.css or use suppressHydrationWarning prop on style tag."
 
   - task: "Tab Switcher (Cámara/Galería/PDF) - Feature #2"
     implemented: true
-    working: false
+    working: true
     file: "app/page.js"
-    stuck_count: 1
+    stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
@@ -315,12 +318,15 @@ frontend:
       - working: false
         agent: "testing"
         comment: "❌ MAJOR: Tab switcher partially broken. Camera and Gallery tabs render correctly, but clicking tabs does NOT change content. PDF tab content (title 'Importar PDF del escáner', 'Seleccionar PDF' button) does NOT appear when PDF tab is clicked. Same JavaScript error ('Invalid or unexpected token') preventing tab switching logic from executing."
+      - working: true
+        agent: "testing"
+        comment: "✅ WORKING (Re-test after react-is fix): Tab switcher works correctly! All 3 tabs (Cámara, Galería, PDF) switch content as expected. PDF tab shows 'Importar PDF del escáner' title and 'Seleccionar PDF' button. Galería tab shows green 'Subir desde galería' button. Cámara tab shows blue 'Escanear Examen' button. Tab switching is functional despite hydration errors affecting other features."
 
   - task: "Bulk Mode Toggle - Feature #2"
     implemented: true
     working: false
     file: "app/page.js"
-    stuck_count: 1
+    stuck_count: 2
     priority: "high"
     needs_retesting: false
     status_history:
@@ -330,12 +336,15 @@ frontend:
       - working: false
         agent: "testing"
         comment: "❌ MAJOR: Bulk mode toggle does NOT work. Clicking toggle switch does not disable camera button or change text. Toggle UI renders correctly but onClick handler not executing. Same JavaScript error blocking all interactivity."
+      - working: false
+        agent: "testing"
+        comment: "❌ MAJOR (Re-test after react-is fix): Bulk mode toggle still BROKEN. Toggle UI renders correctly, but clicking toggle does NOT disable 'Escanear Examen' button or show 'No disponible en modo por lotes' text. State is not updating. ROOT CAUSE: Same React hydration error affecting event handlers. The bulkMode state is not being updated when toggle is clicked."
 
   - task: "Bottom Navigation (Nuevo examen / Historial)"
     implemented: true
     working: false
     file: "app/page.js"
-    stuck_count: 1
+    stuck_count: 2
     priority: "high"
     needs_retesting: false
     status_history:
@@ -345,12 +354,15 @@ frontend:
       - working: false
         agent: "testing"
         comment: "❌ MAJOR: Bottom navigation does NOT work. Clicking 'Historial' button does not navigate to history screen. Clicking 'Nuevo examen' does not navigate back. Navigation UI renders correctly but onClick handlers not executing. Same JavaScript error blocking navigation."
+      - working: false
+        agent: "testing"
+        comment: "❌ MAJOR (Re-test after react-is fix): Bottom navigation still BROKEN. Clicking 'Historial' button does NOT navigate to history screen (header 'Historial de exámenes' never appears). Navigation buttons render correctly but screen state is not changing. ROOT CAUSE: Same React hydration error preventing setScreen() state updates from working."
 
   - task: "Dashboard Stats Page - Precision Metrics (Feature #3)"
     implemented: true
-    working: false
+    working: true
     file: "app/dashboard/stats/page.js"
-    stuck_count: 1
+    stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
@@ -360,6 +372,9 @@ frontend:
       - working: false
         agent: "testing"
         comment: "❌ CRITICAL: Dashboard stats page returns 502 Bad Gateway error. Page fails to compile due to missing dependency: 'react-is' module not found (required by recharts library). Attempted fix: installed react-is@19.2.6 via yarn, but error persists. Dashboard is completely inaccessible. This blocks Feature #3 (Precision Metrics) from being tested."
+      - working: true
+        agent: "testing"
+        comment: "✅ WORKING PERFECTLY (Re-test after react-is fix): Dashboard Stats page at /dashboard/stats loads successfully! All required elements present: 1) 4 KPI cards visible - 'Total Exámenes' (127), 'Nota Media' (7.2), 'Estudiantes' (45), 'Precisión Global' (98.7% with 3 exámenes). 2) Precision chart 'Precisión de Lectura OCR (CER)' visible with green line showing monthly precision data and red dashed 'Objetivo 99%' reference line. Chart shows data from Jun to May with precision at 98.7% in May. 3) 'Evolución Mensual' chart below showing Nota Media and Exámenes trends. Dashboard is fully functional and displays all Feature #3 metrics correctly."
 
   - task: "Screen 2 - Results display"
     implemented: true
@@ -400,16 +415,12 @@ metadata:
 test_plan:
   current_focus:
     - "Exam Config Wizard Modal (Feature #1)"
-    - "Tab Switcher (Cámara/Galería/PDF) - Feature #2"
     - "Bulk Mode Toggle - Feature #2"
     - "Bottom Navigation (Nuevo examen / Historial)"
-    - "Dashboard Stats Page - Precision Metrics (Feature #3)"
   stuck_tasks:
     - "Exam Config Wizard Modal (Feature #1)"
-    - "Tab Switcher (Cámara/Galería/PDF) - Feature #2"
     - "Bulk Mode Toggle - Feature #2"
     - "Bottom Navigation (Nuevo examen / Historial)"
-    - "Dashboard Stats Page - Precision Metrics (Feature #3)"
   test_all: false
   test_priority: "high_first"
 
@@ -432,4 +443,8 @@ agent_communication:
     message: "🎉 ALL ROUND 3 BACKEND TESTS PASSED (7/7). Feature #1 (Wizard Config): POST /api/grade works with and without wizardConfig - legacy path returns ocr_confidence:1, Oposiciones config returns ocr_confidence:1 with Oposiciones-style fields, Academia config returns ocr_confidence:1. Feature #3 (Precision Metrics): POST /api/save-result successfully persists ocr_confidence:0.987 and wizardConfig to DB (UUID returned), GET /api/results returns avgConfidence:0.987 and precisionExamCount:3 with each result having ocrConfidence field, GET /api/precision-stats returns 12 monthly entries with correct structure (currentMonthAvg:0.987, globalAvg:0.987, target:0.99). Feature #2 (PDF Import): POST /api/import-pdf validation returns HTTP 400 with Spanish error 'No se proporcionó archivo PDF'. SUPABASE_BOOTSTRAP_COMPLETE.sql schema successfully applied - all new columns (ocr_confidence, wizard_config) exist and working. All 5 tasks marked needs_retesting:true are now WORKING. Backend is fully functional with real Supabase credentials."
   - agent: "testing"
     message: "❌ ROUND 3 FRONTEND TESTS FAILED (5/6 major issues). CRITICAL JAVASCRIPT ERROR: 'Invalid or unexpected token' preventing ALL interactive features from working. Test results: 1) ✅ Initial render OK - all UI elements present (header, student form, wizard config card, 3 tabs, bulk toggle, exam info, rubric, submit button, bottom nav). 2) ❌ Wizard modal does NOT open when clicking 'Abrir →' - modal never appears. 3) ❌ Tab switcher does NOT work - clicking tabs doesn't change content, PDF tab content never appears. 4) ❌ Bulk mode toggle does NOT work - toggle doesn't disable camera button or change text. 5) ❌ Bottom navigation does NOT work - clicking Historial/Nuevo examen doesn't navigate. 6) ❌ Dashboard stats page returns 502 Bad Gateway - missing 'react-is' dependency (installed react-is@19.2.6 but error persists). ROOT CAUSE: JavaScript syntax error or compilation issue preventing React event handlers from executing. All Round 3 features (Wizard, Tab Switcher, Bulk Mode, Precision Dashboard) are BLOCKED by this error. URGENT: Main agent must investigate and fix JavaScript error before any frontend features can work."
+  - agent: "main"
+    message: "FIXED react-is dependency issue. Installed react-is@19.2.6, restarted Nextjs server. Page now renders correctly with no compilation errors. Ready for re-testing all Round 3 features."
+  - agent: "testing"
+    message: "🔍 RE-TEST AFTER react-is FIX (Round 3 features). CRITICAL NEW ISSUE FOUND: React HYDRATION ERROR preventing event handlers from working. Test results: 1) ✅ Tab Switcher (Cámara/Galería/PDF) WORKS - all 3 tabs switch content correctly. 2) ❌ Bulk Mode Toggle BROKEN - toggle UI renders but clicking does NOT disable camera button or update state. 3) ❌ Bottom Navigation BROKEN - clicking Historial button does NOT navigate to history screen. 4) ❌ Wizard Modal BROKEN - modal opens successfully showing Oposiciones/Academia buttons, but clicking them does NOT advance to Step 2. Buttons are not responding to clicks. 5) ✅ Dashboard Stats Page WORKS PERFECTLY - all 4 KPI cards present (Total Exámenes, Nota Media, Estudiantes, Precisión Global), precision chart 'Precisión de Lectura OCR (CER)' visible with green line and red 99% target line. ROOT CAUSE: Console shows React hydration error 'Warning: An error occurred during hydration. The server HTML was replaced with client content'. This is caused by the <style> tag in page.js (lines 516-532) where server renders HTML entities (&gt;) but client renders actual characters (>). This mismatch causes React to replace the entire DOM during hydration, breaking all event listeners. URGENT FIX NEEDED: Move inline styles to globals.css or use dangerouslySetInnerHTML to prevent hydration mismatch. Until fixed, 3 of 5 Round 3 features remain broken (Wizard, Bulk Toggle, Bottom Nav)."
 
